@@ -1,0 +1,14 @@
+*.sh text eol=lf
+*.py text eol=lf
+*.c text eol=lf
+base/SHA256SUMS -text
+*.sources text eol=lf
+*.gpg binary
+*.ko binary
+*.xz binary
+board/wifi/modules.builtin text eol=lf
+packages.txt text eol=lf
+overlay/** text eol=lf
+release/*.tar.gz filter=lfs diff=lfs merge=lfs -text
+release/SHA256SUMS text eol=lf
+release/packages.tsv text eol=lf

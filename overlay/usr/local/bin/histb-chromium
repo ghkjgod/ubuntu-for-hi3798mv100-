@@ -1,0 +1,33 @@
+#!/bin/bash
+# Root is the local Xfce user. Chromium always runs with the separate desktop UID.
+set -euo pipefail
+b=/opt/histb-chromium
+[[ $(id -u) == 0 && -x $b/usr/bin/chromium ]] || {
+    echo "Launch this browser from the local root desktop after installing its runtime." >&2
+    exit 1
+}
+if [[ ${HISTB_CHROME_MOUNTS:-} != private ]]; then
+    exec unshare --mount --propagation private env HISTB_CHROME_MOUNTS=private "$0" "$@"
+fi
+user=desktop
+uid=$(id -u "$user")
+gid=$(id -g "$user")
+home=/home/desktop
+mount --rbind /dev "$b/dev"
+mount -t proc proc "$b/proc"
+mount --rbind /sys "$b/sys"
+mount -t tmpfs -o mode=755 tmpfs "$b/run"
+mount --bind "$home" "$b$home"
+mount --bind /tmp/.X11-unix "$b/tmp/.X11-unix"
+mount --bind /usr/share/fonts "$b/usr/share/fonts/host"
+mount --bind /etc/machine-id "$b/etc/machine-id"
+if [[ -e /etc/resolv.conf ]]; then mount --bind "$(realpath /etc/resolv.conf)" "$b/etc/resolv.conf"; fi
+if findmnt -rn -t ext4 --mountpoint /srv/tf >/dev/null && [[ -d /srv/tf/desktop ]]; then
+    mount --bind /srv/tf/desktop "$b/media/tf"
+fi
+install -d -m 0700 -o "$uid" -g "$gid" "$b/run/browser"
+cookie="$b/run/browser/Xauthority"
+touch "$cookie"
+xauth -f "${XAUTHORITY:-/root/.Xauthority}" extract "$cookie" "${DISPLAY:-:0}"
+chown "$uid:$gid" "$cookie"; chmod 600 "$cookie"
+exec env -i HOME="$home" USER="$user" LOGNAME="$user" LANG=C.UTF-8 PATH=/usr/bin:/bin DISPLAY="${DISPLAY:-:0}" XAUTHORITY=/run/browser/Xauthority XDG_RUNTIME_DIR=/run/browser XMODIFIERS=@im=ibus GTK_IM_MODULE=xim /usr/sbin/chroot --userspec="$uid:$gid" "$b" /usr/bin/chromium --no-first-run --disable-gpu --renderer-process-limit=2 "$@"

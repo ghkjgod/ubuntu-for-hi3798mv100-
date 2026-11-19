@@ -1,0 +1,12 @@
+[Unit]
+Description=Select a supported HDMI timing for the connected display
+Before=hifb-plane.service display-manager.service
+ConditionPathExists=/dev/hi_disp
+ConditionFileIsExecutable=/usr/local/sbin/sink-mode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/histb-monitor
+
+[Install]
+WantedBy=graphical.target

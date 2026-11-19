@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+mode=$(/usr/local/libexec/histb/monitor-mode.py)
+# The SDK capability table also covers modes signalled outside base/CTA detailed timings.
+exec /usr/local/sbin/sink-mode "$mode"

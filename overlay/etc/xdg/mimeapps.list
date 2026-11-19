@@ -1,0 +1,4 @@
+[Default Applications]
+text/html=histb-chromium.desktop;
+x-scheme-handler/http=histb-chromium.desktop;
+x-scheme-handler/https=histb-chromium.desktop;

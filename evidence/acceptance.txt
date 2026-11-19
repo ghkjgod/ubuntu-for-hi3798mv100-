@@ -1,0 +1,48 @@
+Final cold boot (UTC, RX-only UART)
+2026-11-19T15:18:19.176+00:00 cycle=000 HISTB_EMMC_UBUNTU
+2026-11-19T15:18:30.989+00:00 cycle=000 HISTB_FINAL_START
+2026-11-19T15:18:41.382+00:00 cycle=000 Ubuntu eMMC system test
+2026-11-19T15:18:41.390+00:00 cycle=000 Ubuntu eMMC data volume test
+2026-11-19T15:18:41.445+00:00 cycle=000 /         /dev/mmcblk0p9[/noble-system] 259:1   /noble-system
+2026-11-19T15:18:41.450+00:00 cycle=000 └─/srv/tf /dev/mmcblk1p1                179:33  /
+2026-11-19T15:18:41.544+00:00 cycle=000      c1   0 root seat0 tty7 active no   -
+2026-11-19T15:18:41.650+00:00 cycle=000     0 xfce4-session
+2026-11-19T15:18:41.651+00:00 cycle=000     0 ibus-daemon
+2026-11-19T15:18:41.653+00:00 cycle=000     0 xfdesktop
+2026-11-19T15:18:41.654+00:00 cycle=000     0 nm-applet
+2026-11-19T15:18:42.706+00:00 cycle=000 Wi-Fi BSS count 13
+2026-11-19T15:18:42.778+00:00 cycle=000 Bluetooth HCI count 0
+2026-11-19T15:18:52.693+00:00 cycle=000         0x2200003 "EC6108 Chromium JS 42 - Chromium": ("chromium" "Chromium")  945x1033+0+0  +10+37
+2026-11-19T15:18:52.772+00:00 cycle=000 Browser /opt/histb-chromium/usr/lib/chromium/chromium
+2026-11-19T15:18:52.890+00:00 cycle=000 Seccomp:	2
+2026-11-19T15:18:52.963+00:00 cycle=000 HISTB_FINAL_DESKTOP_OK
+2026-11-19T15:20:47.841+00:00 cycle=000 reboot: System halted
+
+Physical mouse and keyboard (local time)
+Nov 19 22:43:30 hi3798-desktop python3[2446]: GTK_ENTRY_OPENED
+Nov 19 22:43:48 hi3798-desktop python3[2446]: PHYSICAL_TEXT_MATCH_USB42
+
+WLAN association, DHCP and HTTPS
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/2)
+100 (connected)
+DHCPv4-assigned
+IPv4 default route available for WLAN
+TLS verified through WLAN; signed index endpoint returned 200
+
+Root desktop input method
+engine libpinyin committed 中文
+
+Chromium over HTTPS
+HTTPS document bytes 54549 title  Ubuntu Ports | 镜像站使用帮助 | 清华大学开源软件镜像站 | Tsinghua Open Source Mirrorclipboardclipboard-checkbarsenvelopehashtaggithubweibo
+
+QHD transmitter and framebuffer
+HDMI 2560 x 1440, desktop 1920 x 1080
+EDID Status         : Unvalid             | CEC Status          : Disable
+Out Timing          : 2720x1481 p H:+ V:+
+Current Fmt         : 2560X1440_60_RB     | Input Type          : I2S
+TMDS Clock          : 241500000 Hz        | Audio FIFO Underflow: 0
+VirtualScreen       :1920/1080
+
+Relay final readback
+2026-11-19T15:20:50.139+00:00 OK READ 25=0
+2026-11-19T15:20:50.139+00:00 final-safe-state=PASS GPIO25=0

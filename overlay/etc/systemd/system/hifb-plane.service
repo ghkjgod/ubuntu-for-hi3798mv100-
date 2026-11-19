@@ -1,0 +1,12 @@
+[Unit]
+Description=HiSilicon Xorg graphics plane
+After=systemd-udev-trigger.service
+Before=display-manager.service
+ConditionPathExists=/dev/fb0
+ConditionFileIsExecutable=/usr/local/sbin/hifb-plane
+
+[Service]
+ExecStart=/usr/local/sbin/hifb-plane 1080
+
+[Install]
+WantedBy=graphical.target
