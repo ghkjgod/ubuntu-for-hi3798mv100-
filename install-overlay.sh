@@ -10,6 +10,7 @@ while IFS= read -r -d '' entry; do
     else
         mode=644
         [[ $rel != /usr/local/bin/* ]] || mode=755
+        [[ $rel != /etc/NetworkManager/system-connections/*.nmconnection ]] || mode=600
         install -o root -g root -m "$mode" "$entry" "$root$rel"
     fi
 done < <(find "$src/overlay" -print0)

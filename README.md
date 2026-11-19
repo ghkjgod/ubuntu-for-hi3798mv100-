@@ -2,7 +2,13 @@
 
 上电从 eMMC p9 进入 Ubuntu 24.04.5 LTS armhf。系统、root 主目录和浏览器配置保存在 eMMC。8 GB TF 的单个 ext4 分区挂载在 `/srv/tf`，桌面可通过 `~/TF` 访问。Ubuntu 的启动选择独立于 TF 是否插入。
 
-Xorg 使用海思 HIFB，Xfce 关闭合成。LightDM 免密码自动进入本地 root 桌面。IBus 提供智能拼音，Super+Space 切换输入法。Chromium 使用独立的普通用户运行，另装有 NetSurf。右上角的 NetworkManager 托盘可以选择 Wi-Fi，也可使用 `nmcli`。专用有线网口由 systemd-networkd 管理。[真机验收与 HDMI 采集帧](HARDWARE.md)
+Xorg 使用海思 HIFB，Xfce 关闭合成。LightDM 免密码自动进入本地 root 桌面。IBus 提供智能拼音，Super+Space 切换输入法。Chromium 使用独立的普通用户运行，另装有 NetSurf。NetworkManager 管理 Wi-Fi 和有线网口。接入提供 DHCP 的路由器后，按主机名 `hi3798-desktop` 查找 IPv4 地址。[真机验收与 HDMI 采集帧](HARDWARE.md)
+
+## 无屏 SSH 登录
+
+镜像内置 OpenSSH，`ssh.service` 随系统启动并监听 TCP 22。每台新安装的盒子在首次启动服务时生成主机密钥，随后复用。root 通过公钥认证登录。本地桌面保留自动登录。
+
+公开镜像由安装者在电脑端配置自己的登录公钥。下面的 eMMC 安装示例在首次重启前写入公钥并输出盒子主机指纹。自行构建专用镜像时，也可以把 `HISTB_SSH_PUBKEY=/绝对路径/id_ed25519.pub` 作为环境变量传给构建脚本。用对应私钥执行 `ssh root@盒子的地址`，首次连接时核对指纹。
 
 ## 取得安装文件
 
@@ -36,11 +42,13 @@ bash install-emmc.sh ec6108 stage release "$emmc" "$tf_uuid"
 
 ```bash
 ssh -t ec6108 'chroot /noble-system passwd root'
+ssh ec6108 'umask 077; mkdir -p /noble-system/root/.ssh && cat >> /noble-system/root/.ssh/authorized_keys' < ~/.ssh/id_ed25519.pub
+ssh ec6108 'chroot /noble-system ssh-keygen -A && chroot /noble-system ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'
 bash install-emmc.sh ec6108 trial "$emmc"
 ssh ec6108 'sync && reboot'
 ```
 
-trial 原子替换 p9 上的 `/sbin/init` 链接。盒子沿用原有 eMMC U-Boot、环境、内核和分区表。PID 1 的小脚本先消费一次试启标记，再将同一个 p9 上的 `/noble-system` 切换为根，执行 Ubuntu systemd。第一次试启成功后，在 Ubuntu 的本地终端确认并设为以后每次上电的默认系统。
+trial 原子替换 p9 上的 `/sbin/init` 链接。盒子沿用原有 eMMC U-Boot、环境、内核和分区表。PID 1 的小脚本先消费一次试启标记，再将同一个 p9 上的 `/noble-system` 切换为根，执行 Ubuntu systemd。第一次试启成功后，通过 SSH 登录新的 Ubuntu，或在本地终端确认并设为默认系统。若原系统与 Ubuntu 使用同一 IP，可在首次连接 Ubuntu 时加上 `-o HostKeyAlias=hi3798-ubuntu`，按上一行输出的主机指纹独立核对。
 
 ```bash
 findmnt -o TARGET,SOURCE,MAJ:MIN,FSROOT /

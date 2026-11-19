@@ -1,4 +1,16 @@
-# EC6108V9C 真机验收 · 2026-11-19
+# EC6108V9C 真机验收
+
+## 2026-11-20 · 有线 DHCP 和开机 SSH
+
+COM6 的 CP210x 在盒子开机时返回 Linux 登录提示，随后完成双向串口登录。通过专用网口传送并校验 Ubuntu 签名仓库的 armhf 软件包，在现有 eMMC 系统上原位安装 OpenSSH 9.6p1（Ubuntu 3ubuntu13.20）。测试全程使用外部供电和网线。镜像与实机采用相同的有线配置、SSH 二进制和 systemd 启动配置。
+
+原先的 systemd-networkd 配置发出 DISCOVER，板上抓包看见 OFFER，日志报告 `Could not receive message from raw socket, ignoring: Exchange full`。改由 NetworkManager 的 `histb-ethernet` 配置接管 eth0 后，在同一网口和 DHCP 服务上观察到 DISCOVER、OFFER、REQUEST、ACK。100 Mbps 全双工，台架租约为 169.254.112.92/16，有效期 3600 秒。接普通路由器时由其 DHCP 服务分配地址。
+
+软件重启后 boot ID 已改变。电脑通过重新取得的 IPv4 地址以公钥登录 root，核对了实体机的 ED25519 主机指纹与重启前一致。`ssh.service` 为 enabled、active，TCP 22 同时监听 IPv4 和 IPv6，LightDM 与 NetworkManager 均为 active。IPv6 链路本地地址也完成了独立的 SSH 登录。
+
+两份交付 rootfs 已分别解包。在每份恢复副本上核对了 2 个 SSH 可执行文件和 5 个服务及网络配置文件的 SHA-256，均与当前实机相同。每份镜像的主机私钥在发布时为空，执行首次服务启动前的 `ssh-keygen -A` 后得到不同的 ED25519 指纹，再执行时指纹保持一致，`sshd -t` 通过。公开版留空登录公钥，台主自用版预置台主的公钥。
+
+## 2026-11-19 · 桌面与板级设备
 
 最终配置为 **eMMC 启动 Ubuntu，TF 作为数据盘**。测试使用 Hi3798MV100 四核 Cortex-A7、1 GiB 内存、厂商 4.4.35_ecoo_81082668 内核和专用 100 Mbps 全双工网口。现场仅有 HDMI 采集预览。原始测试中的 Wi-Fi 密码、接入点名称和台架登录材料均未随项目分发。
 

@@ -1,0 +1,15 @@
+[connection]
+id=histb-ethernet
+uuid=bbebde0a-baa3-4f33-b6ad-5c12c1aa404e
+type=ethernet
+interface-name=eth0
+autoconnect=true
+
+[ethernet]
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+addr-gen-mode=eui64

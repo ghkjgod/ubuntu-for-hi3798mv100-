@@ -6,6 +6,7 @@ udev
 dbus-x11
 libpam-systemd
 iproute2
+openssh-server
 iputils-ping
 kmod
 e2fsprogs
