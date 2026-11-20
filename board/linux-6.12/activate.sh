@@ -12,3 +12,5 @@ if systemctl is-active --quiet NetworkManager &&
    ! printf '%s\n' "$links" | awk 'NF && $NF != "unmanaged" { used=1 } END { exit !used }'; then
     systemctl disable --now systemd-networkd-wait-online.service systemd-networkd.socket systemd-networkd.service
 fi
+
+/usr/local/sbin/histb-chromium-egl

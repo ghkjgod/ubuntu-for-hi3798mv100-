@@ -1,0 +1,266 @@
+{
+  "board": "EC6108V9C / Hi3798MV100",
+  "kernel": "6.12.114-hi3798-mv100-exp",
+  "chromium": "150.0.7871.181 armhf",
+  "gpu": "ANGLE (lima, Mali450, OpenGL ES 2.0 Mesa 22.3.6)",
+  "skia": "GaneshGL",
+  "sandboxed": true,
+  "features": {
+    "2d_canvas": "enabled",
+    "gpu_compositing": "enabled",
+    "rasterization": "enabled_force",
+    "webgl": "enabled",
+    "video_decode": "disabled_software"
+  },
+  "gpuProcess": {
+    "uid": 1000,
+    "renderGroup": 993,
+    "seccomp": 2,
+    "renderNode": "/dev/dri/renderD128",
+    "driver": "/run/browser-dri/lima_dri.so"
+  },
+  "webglClear": {
+    "renderer": "ANGLE (lima, Mali450, OpenGL ES 2.0)",
+    "pixels": [
+      64,
+      128,
+      191,
+      255
+    ],
+    "error": 0
+  },
+  "webgpu": {
+    "webgpu": true,
+    "adapter": null
+  },
+  "fullscreen": [
+    {
+      "width": 1920,
+      "height": 1080,
+      "corners": [
+        [
+          232,
+          197,
+          31
+        ],
+        [
+          34,
+          187,
+          238
+        ],
+        [
+          170,
+          34,
+          187
+        ],
+        [
+          238,
+          119,
+          34
+        ]
+      ],
+      "webgl": {
+        "link": true,
+        "log": "",
+        "pixels": [
+          36,
+          198,
+          90,
+          255
+        ],
+        "glError": 0
+      },
+      "webgl2": false,
+      "refreshHzReportedByXrandr": 60
+    },
+    {
+      "width": 2560,
+      "height": 1440,
+      "corners": [
+        [
+          232,
+          197,
+          31
+        ],
+        [
+          34,
+          187,
+          238
+        ],
+        [
+          170,
+          34,
+          187
+        ],
+        [
+          238,
+          119,
+          34
+        ]
+      ],
+      "webgl": {
+        "link": true,
+        "log": "",
+        "pixels": [
+          36,
+          198,
+          90,
+          255
+        ],
+        "glError": 0
+      },
+      "webgl2": false,
+      "refreshHzReportedByXrandr": 59.95
+    },
+    {
+      "width": 3840,
+      "height": 2160,
+      "corners": [
+        [
+          232,
+          197,
+          31
+        ],
+        [
+          34,
+          187,
+          238
+        ],
+        [
+          170,
+          34,
+          187
+        ],
+        [
+          238,
+          119,
+          34
+        ]
+      ],
+      "webgl": {
+        "link": true,
+        "log": "",
+        "pixels": [
+          36,
+          198,
+          90,
+          255
+        ],
+        "glError": 0
+      },
+      "webgl2": false,
+      "refreshHzReportedByXrandr": 30
+    },
+    {
+      "width": 4096,
+      "height": 2160,
+      "corners": [
+        [
+          232,
+          197,
+          31
+        ],
+        [
+          34,
+          187,
+          238
+        ],
+        [
+          170,
+          34,
+          187
+        ],
+        [
+          238,
+          119,
+          34
+        ]
+      ],
+      "webgl": {
+        "link": true,
+        "pixels": [
+          36,
+          198,
+          90,
+          255
+        ],
+        "glError": 0
+      },
+      "webgl2": false,
+      "refreshHzReportedByXrandr": 30
+    }
+  ],
+  "hdmiCapture": {
+    "sourceMode": "4096x2160 at 30 Hz (Xorg)",
+    "captureSize": [
+      1920,
+      1080
+    ],
+    "rgbAt3And97Percent": [
+      [
+        242,
+        218,
+        28
+      ],
+      [
+        38,
+        212,
+        246
+      ],
+      [
+        161,
+        0,
+        187
+      ],
+      [
+        239,
+        113,
+        26
+      ]
+    ]
+  },
+  "h264": {
+    "desktop": "1920x1080 60 Hz, balanced, local muted synthetic clips at their coded dimensions; each clip played to ended",
+    "clips": [
+      {
+        "kResolution": "640x360",
+        "kIsPlatformVideoDecoder": "false",
+        "kVideoDecoderName": "FFmpegVideoDecoder",
+        "playback": {
+          "width": 640,
+          "height": 360,
+          "seconds": 8,
+          "wallSeconds": 8.196600000000092,
+          "totalFrames": 192,
+          "droppedFrames": 89
+        }
+      },
+      {
+        "kResolution": "1280x720",
+        "kIsPlatformVideoDecoder": "false",
+        "kVideoDecoderName": "FFmpegVideoDecoder",
+        "playback": {
+          "width": 1280,
+          "height": 720,
+          "seconds": 8,
+          "wallSeconds": 8.488199999999953,
+          "totalFrames": 240,
+          "droppedFrames": 137
+        }
+      },
+      {
+        "kResolution": "1920x1080",
+        "kIsPlatformVideoDecoder": "false",
+        "kVideoDecoderName": "FFmpegVideoDecoder",
+        "playback": {
+          "width": 1920,
+          "height": 1080,
+          "seconds": 8,
+          "wallSeconds": 14.172199999999954,
+          "totalFrames": 240,
+          "droppedFrames": 150
+        }
+      }
+    ]
+  }
+}

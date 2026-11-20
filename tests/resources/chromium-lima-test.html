@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Chromium Lima rendering test</title>
+<style>
+  * { box-sizing: border-box }
+  body { margin: 10vh 12vw; background: #224466; color: white; font: 24px sans-serif }
+  .corner { position: fixed; width: 9vw; height: 8vh }
+  .tl { top: 0; left: 0; background: #e8c51f }
+  .tr { top: 0; right: 0; background: #22bbee }
+  .bl { bottom: 0; left: 0; background: #aa22bb }
+  .br { bottom: 0; right: 0; background: #ee7722 }
+</style>
+<i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+<h1>Chromium · Mali450</h1>
+<canvas width="256" height="128"></canvas>
+<pre id="status"></pre>
+<script>
+function drawTexture(gl) {
+  const program = gl.createProgram();
+  const shaders = [
+    [gl.VERTEX_SHADER, 'attribute vec2 p; void main() { gl_Position = vec4(p, 0., 1.); }'],
+    [gl.FRAGMENT_SHADER, 'precision mediump float; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, vec2(.5)); }']
+  ];
+  for (const [type, source] of shaders) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
+    gl.attachShader(program, shader);
+  }
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const position = gl.getAttribLocation(program, 'p');
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([36, 198, 90, 255]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const pixels = new Uint8Array(4);
+  gl.readPixels(3, 3, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  return {link: true, pixels: Array.from(pixels), glError: gl.getError()};
+}
+try {
+  const gl = document.querySelector('canvas').getContext('webgl', {preserveDrawingBuffer: true});
+  if (!gl) throw Error('WebGL 1 context unavailable');
+  window.result = drawTexture(gl);
+} catch (error) {
+  window.result = {error: String(error)};
+}
+document.getElementById('status').textContent = JSON.stringify(window.result);
+</script>
+</html>

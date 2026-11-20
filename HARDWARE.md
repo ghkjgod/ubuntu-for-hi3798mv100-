@@ -1,5 +1,29 @@
 # EC6108V9C 真机验收
 
+## 2026-11-21 · Chromium 的 Mali450 加速与视频播放
+
+EC6108V9C 从 eMMC 启动 Linux 6.12.114，Ubuntu 桌面的默认浏览器为 Debian armhf Chromium 150.0.7871.181。上一版浏览器启动器固定传入 `--disable-gpu`。移除它后，还需在独立运行环境补齐 EGL/GLES、授予 Lima 渲染节点权限，并选择适配 OpenGL ES 2.0 的 ANGLE 后端。保留 ANGLE 着色器转换后，Skia 绘制的页面文字和纹理通过像素验证。[Chromium 图形开关源码](https://chromium.googlesource.com/chromium/src/+/refs/tags/150.0.7871.181/ui/gl/gl_features.cc) · [Mesa Lima 支持的 API](https://docs.mesa3d.org/drivers/lima.html)
+
+| 测试 | 真机结果 |
+| --- | --- |
+| 桌面默认浏览器 | 普通用户 UID 1000，GPU 进程 `Seccomp: 2`，打开 `/dev/dri/renderD128`，实际映射私有 Lima 驱动。 |
+| 页面合成和绘制 | `chrome://gpu` 显示 Canvas、Compositing、Rasterization 和 WebGL 硬件加速，Skia 后端为 GaneshGL，渲染器为 ANGLE / Lima / Mali450。 |
+| WebGL | 实际创建 WebGL 1 上下文并编译、链接纹理着色器，回读 RGBA 为 `36,198,90,255`，GL 错误码 0。WebGL 2 创建失败。WebGPU 状态栏虽显示启用，在 localhost 实际请求适配器返回 `null`。 |
+| 全屏 | 1920×1080@60、2560×1440@59.95、3840×2160@30 和 4096×2160@30 的全屏页面均通过四角像素比较。4096 宽在 Debian 原版 Mesa 上漏画下方两角，同版本板级修正后再次核对了浏览器截图和 HDMI 实拍。 |
+| 接收端 | 台架采集桥提供 1920×1080 采集帧。4096×2160 为发送端模式，采集图包含完整四角。接收端没有独立时序计数。 |
+
+从默认桌面浏览器打开 GPU 诊断页，通过 HDMI 拍下实际显示结果。[诊断页实拍](evidence/chromium-gpu.png) · [DCI 全屏实拍](evidence/chromium-lima-dci.png) · [像素和解码器记录](evidence/chromium-lima.json) · [可复测的网页](tests/resources/chromium-lima-test.html)
+
+**视频解码。** 在 1920×1080@60 桌面、默认平衡频率下，重新启动浏览器，依次按视频原尺寸播放本地无声合成样片。Chromium Media 事件中三段 H.264 均选用 `FFmpegVideoDecoder`，`kIsPlatformVideoDecoder=false`。以下为各播放一次直至结束的结果，包含显示环节的掉帧。
+
+| H.264 样片 | 视频时长 | 播放耗时 | 丢帧 / 总帧 |
+| --- | ---: | ---: | ---: |
+| 640×360，24 fps | 8 s | 8.20 s | 89 / 192 |
+| 1280×720，30 fps | 8 s | 8.49 s | 137 / 240 |
+| 1920×1080，30 fps | 8 s | 14.17 s | 150 / 240 |
+
+本机的解码单元为 **VDH V300R001**，码流检测单元为 **SCD V200**。6.12 内核已启用 media 和 V4L2 核心，但本台没有注册解码节点，`/dev/video*`、`/dev/media*` 和 `/dev/hi_vdec*` 均为空。原厂 SDK 使用 VFMW 私有接口。现有另一套海思 6.12 解码驱动支持 CV200 的 V4R3 和 MV310 的 V5R6，MV100 需要适配自己的 VDH 后端，并将解码帧通过 Chromium 可使用的接口交付。[MV100 原厂 VFMW 配置](https://github.com/glinuz/hi3798mv100/blob/master/HiSTBLinuxV100R005C00SPC041B020/source/msp/drv/vfmw/vfmw_v4.0/firmware/product/Hi3798MV100/HD_FULL/vfmw_config.cfg) · [海思 6.12 解码驱动支持表](https://github.com/HiSilicon-Development/HiVXE-2.0)
+
 ## 2026-11-20 · Linux 6.12 多分辨率 HDMI 与 Mali450
 
 断电再上电后，原 U-Boot 从 eMMC p6（扇区 28672）装入新版内核，Ubuntu 从 p9 进入 Xfce。未接入有效 EDID 的采集桥默认得到 1920×1080p60。有线 DHCP、SSH、TF 数据卷和 Xorg 在冷启动后可用。Xorg 使用 glamor，X11 GLES 返回 `Mali450`，离屏 GPU 像素回读为 `128,128,64,255`、错误码 0。[冷启动记录](evidence/hdmi-coldboot.txt)
@@ -22,7 +46,7 @@
 
 ![4K30 原生桌面与 Mali450 绘制的 GLES 三角形，经 HDMI 采集](evidence/hdmi-uhd-desktop.png)
 
-本版扫描面支持宽度至 4096、高度至 2160，逐行自定义时序的像素时钟为 20–297 MHz。常规 CTA 4K50/60 需要 594 MHz，当前驱动未实现 YCbCr 4:2:0 的降带宽输出。游戏、浏览器与视频解码的内容帧率需分别衡量。Chromium 沿用精简桌面的软件渲染配置。
+本版扫描面支持宽度至 4096、高度至 2160，逐行自定义时序的像素时钟为 20–297 MHz。常规 CTA 4K50/60 需要 594 MHz，当前驱动未实现 YCbCr 4:2:0 的降带宽输出。游戏、浏览器与视频解码的内容帧率需分别衡量。11 月 20 日测试时 Chromium 沿用软件渲染配置。
 
 
 ## Linux 功能与资源实测
@@ -48,7 +72,7 @@
 | Wi-Fi / 蓝牙 | RTL8188FU 通过 rtl8xxxu 加载固件 4.0。已实测 WPA2、DHCP、网关与 DNS。一次 44.7 秒测量中网关回包 110/110，包含四核和 GPU 同时满载约 15 秒。芯片报告 WiFi=1、BT=0，系统未枚举蓝牙控制器。 |
 | 音频 | HDMI ALSA PCM 为 S16_LE、48 kHz、双声道。修复不足一个 DMA 突发的尾帧处理，12001、32768、48016 和 576000 帧均正常 drain。采集桥以 44.1 kHz 双声道录到约 523、733、997 Hz 的测试音。 |
 | USB / 拼音 | 本轮内核枚举罗技 USB 鼠标。GTK3 文本框使用 Fcitx Google 拼音，通过 XTEST 输入 zhongwen 和空格，实际提交“中文”，约 0.92 秒含模拟按键间隔。本轮未枚举独立键盘，早期实体键鼠实测见下文。 |
-| 浏览器 | 补回 Chromium 150 初始化分配器所需的 madvise。X11 浏览器执行 JavaScript Promise，页签标题返回 42。主进程及渲染器 UID 为 1000，渲染器 Seccomp 为 2。Chromium 使用软件渲染。 |
+| 浏览器 | 补回 Chromium 150 初始化分配器所需的 madvise。X11 浏览器执行 JavaScript Promise，页签标题返回 42。主进程及渲染器 UID 为 1000，渲染器 Seccomp 为 2。当时的 Chromium 使用软件渲染。 |
 | 系统健康 | dpkg --audit 无输出，冷启动后 systemctl --failed 为空。未枚举 RTC。专用 DHCP 不下发网关或 DNS，隔离运行时板上时钟未经外部时源校准。 |
 
 一次 RAM 试启动中，无线在主动断开测试配置后出现 USB 重新枚举超时。最终系统增加了关机时释放 RTL8188FU 的处理，已验证从 eMMC 冷启动、再热重启均识别 wlan0。热重启后的 111.7 秒无线测试网关回包 220/220，路由器 DNS 响应匹配。长期无线稳定性未做老化验证。满频设置在热重启后自动恢复，验收结束将本机设回平衡模式。

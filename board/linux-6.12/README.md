@@ -26,6 +26,27 @@ Mesa 的构建脚本从 Ubuntu Ports 获取固定版本的源包，核对三个 
 
 `MESA_SOURCE_CACHE` 可以指向包含 mesa/SHA256SUMS 内三个源文件的目录，`MESA_SYSROOT` 可以指向含 armhf 开发库的 Ubuntu sysroot。单独重建用户态时运行 `bash board/linux-6.12/mesa/build.sh 新工作目录 rootfs暂存目录`。完整构建会自动执行这一步。
 
+Chromium 的 Debian Bookworm armhf 环境使用独立的 Mesa 22.3.6。完整构建会从 Debian 获取固定版本的源码和 EGL 软件包并验证 SHA256。交叉工具链还需要 `debian-archive-keyring` 以验证 Debian 开发依赖。浏览器和桌面使用相同的宽渲染目标补丁。单独重建浏览器驱动可运行 `bash board/linux-6.12/chromium/mesa/build.sh 新工作目录 rootfs暂存目录`。可用 `CHROMIUM_MESA_SOURCE_CACHE` 指定缓存源码，`CHROMIUM_MESA_SYSROOT` 指定 Bookworm armhf 开发库。[浏览器驱动构建](chromium/mesa/build.sh)
+
+## 更新已有 6.12 桌面的浏览器
+
+在上一版 6.12.114 多模式 HDMI 桌面上，先关闭 Chromium 并核对新版升级包的 SHA256。将升级包放到盒子上，运行下面的命令。它只更新浏览器启动器、私有驱动、EGL 依赖和版权文件，完成后从原桌面图标重新启动 Chromium。
+
+```sh
+pkg=/path/to/hi3798mv100-linux-6.12.114-hdmi.tar.gz
+sudo tar -xzf "$pkg" -C / --no-overwrite-dir --strip-components=2 \
+    ./rootfs/usr/local/bin/histb-chromium \
+    ./rootfs/usr/local/sbin/histb-chromium-egl \
+    ./rootfs/usr/local/lib/histb-lima/browser-dri \
+    ./rootfs/usr/local/share/histb-lima/chromium-egl \
+    ./rootfs/usr/share/doc/histb-lima/browser-dri
+sudo /usr/local/sbin/histb-chromium-egl
+```
+
+启动器按 Lima 节点的实际组号授予普通浏览器用户渲染权限，ANGLE 使用 GLES 2 着色器转换。关闭 Mesa 磁盘着色器缓存后，GPU 进程可以进入 Chromium 的 seccomp 沙箱。私有驱动按 Debian Mesa 包版本匹配。发布版的三个 EGL 依赖可离线补装。自定义环境若已升级 Mesa 或 GLVND，可在该 Debian 环境中通过签名软件源安装其配套的 `libegl1 libegl-mesa0 libgles2`，并按相应 Mesa 版本重建宽屏修正。
+
+单次回退可先退出全部 Chromium 窗口，再在本机桌面终端运行 `HISTB_CHROMIUM_SOFTWARE=1 histb-chromium`。正常关闭后由原图标启动即可恢复 Lima。原厂 4.4 环境沿用软件渲染。
+
 ## 安装与试启动
 
 实测盒子已完成安装。给同一台盒子重新部署时，先验证 release/SHA256SUMS，在新目录解开升级包，再执行以下用户态步骤。根文件系统应先按仓库说明配好有线 DHCP 和 SSH。

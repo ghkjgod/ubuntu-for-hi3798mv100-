@@ -66,5 +66,8 @@ mkdir -p "$wants"
 for unit in histb-performance histb-zram histb-wifi-shutdown; do
     ln -s "../$unit.service" "$wants/$unit.service"
 done
+sh "$here/chromium/prepare.sh" "$root/usr/local/share/histb-lima/chromium-egl"
+install -m755 "$here/chromium/install.sh" "$root/usr/local/sbin/histb-chromium-egl"
 bash "$here/mesa/build.sh" "$work/mesa" "$root"
+bash "$here/chromium/mesa/build.sh" "$work/browser-mesa" "$root"
 sh "$here/package.sh" "$work/package"

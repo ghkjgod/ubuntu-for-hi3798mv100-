@@ -20,7 +20,7 @@ printf '#!/bin/sh\nexit 101\n' > "$b/usr/sbin/policy-rc.d"
 chmod 755 "$b/usr/sbin/policy-rc.d"
 export DEBIAN_FRONTEND=noninteractive
 chroot "$b" apt-get -o APT::Update::Error-Mode=any update
-chroot "$b" apt-get install -y --no-install-recommends chromium chromium-sandbox ca-certificates fonts-dejavu-core
+chroot "$b" apt-get install -y --no-install-recommends chromium chromium-sandbox libegl1 libegl-mesa0 libgles2 ca-certificates fonts-dejavu-core
 chroot "$b" apt-get clean
 chroot "$b" dpkg --audit
 chroot "$b" dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' >"$b/etc/chromium-runtime-packages.tsv"

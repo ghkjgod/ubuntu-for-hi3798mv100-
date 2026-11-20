@@ -30,4 +30,36 @@ cookie="$b/run/browser/Xauthority"
 touch "$cookie"
 xauth -f "${XAUTHORITY:-/root/.Xauthority}" extract "$cookie" "${DISPLAY:-:0}"
 chown "$uid:$gid" "$cookie"; chmod 600 "$cookie"
-exec env -i HOME="$home" USER="$user" LOGNAME="$user" LANG=C.UTF-8 PATH=/usr/bin:/bin DISPLAY="${DISPLAY:-:0}" XAUTHORITY=/run/browser/Xauthority XDG_RUNTIME_DIR=/run/browser XMODIFIERS="${XMODIFIERS:-@im=ibus}" GTK_IM_MODULE=xim /usr/sbin/chroot --userspec="$uid:$gid" "$b" /usr/bin/chromium --no-first-run --disable-gpu --renderer-process-limit=2 "$@"
+# EGL in this Debian runtime needs the Lima render device's host group.
+groups=()
+driver_env=()
+graphics=(--disable-gpu)
+libs="$b/usr/lib/arm-linux-gnueabihf"
+selector=/usr/local/lib/histb-lima/libkmsro-lima-select.so
+if [[ ${HISTB_CHROMIUM_SOFTWARE:-0} != 1 && -r $selector &&
+      -e $libs/libEGL_mesa.so.0 && -e $libs/libEGL.so.1 && -e $libs/libGLESv2.so.2 ]]; then
+    for node in /sys/class/drm/renderD*; do
+        [[ -c /dev/dri/${node##*/} && $(basename "$(readlink -f "$node/device/driver")") == lima ]] || continue
+        groups=(--groups="$(stat -c %g "/dev/dri/${node##*/}")")
+        install -m 0644 "$selector" "$b/run/libkmsro-lima-select.so"
+        # Mesa 22 starts cache workers before Chromium installs its GPU seccomp
+        # filter. With no Mesa disk cache the GPU process enters the sandbox.
+        driver_env=(MESA_SHADER_CACHE_DISABLE=true MESA_LOADER_DRIVER_OVERRIDE=pl111 MV100_KMSRO_LIMA_ONLY=1 LD_PRELOAD=/run/libkmsro-lima-select.so)
+        dri=/usr/local/lib/histb-lima/browser-dri
+        if [[ -r $dri/pl111_dri.so && $(chroot "$b" dpkg-query -W -f='${Version}' libgl1-mesa-dri) == 22.3.6-1+deb12u2 ]]; then
+            mkdir "$b/run/browser-dri"
+            mount --bind "$dri" "$b/run/browser-dri"
+            mount -o remount,bind,ro "$b/run/browser-dri"
+            driver_env+=(LIBGL_DRIVERS_PATH=/run/browser-dri:/usr/lib/arm-linux-gnueabihf/dri)
+        fi
+        # ES2 is the hardware limit. ANGLE shader translation is needed for
+        # Ganesh's textured page tiles on a GPU with zero vertex texture units.
+        graphics=(--use-gl=angle --use-angle=gles --disable-features=FallbackToSWIfGLES3NotSupported,AllowANGLEPassthroughShaders)
+        break
+    done
+fi
+exec env -i HOME="$home" USER="$user" LOGNAME="$user" LANG=C.UTF-8 PATH=/usr/bin:/bin \
+    DISPLAY="${DISPLAY:-:0}" XAUTHORITY=/run/browser/Xauthority XDG_RUNTIME_DIR=/run/browser \
+    XMODIFIERS="${XMODIFIERS:-@im=ibus}" GTK_IM_MODULE=xim \
+    /usr/sbin/chroot --userspec="$uid:$gid" "${groups[@]}" "$b" /usr/bin/env "${driver_env[@]}" \
+    /usr/bin/chromium --no-first-run --renderer-process-limit=2 "${graphics[@]}" "$@"
