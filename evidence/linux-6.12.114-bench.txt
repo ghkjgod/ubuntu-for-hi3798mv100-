@@ -1,0 +1,15 @@
+Boot from eMMC
+MMC read: dev # 0, block # 28672, count 40960 ... 40960 blocks read: OK
+## Booting kernel from Legacy Image at 01ffffc0 ...
+Image Name:   MV100 6.12.114 codex-lima-mp2 EX
+Data Size:    5941410 Bytes = 5.7 MiB
+Load Address: 02000000
+Entry Point:  02000000
+Verifying Checksum ... OK
+Ubuntu 24.04.5 LTS hi3798-desktop ttyAMA0
+[  134.147092] reboot: Power off not available: System halted instead
+
+DHCP ACK 169.254.112.92
+HDMI-UVC original frame SHA256 b5bd8707378b7bbb1ce1bea64ec0f91a68216e8e59a1cba8e53dcd1c495de345
+linux612114-bringup-01 GPIO25=0 PASS
+linux612114-coldboot-02 GPIO25=0 PASS

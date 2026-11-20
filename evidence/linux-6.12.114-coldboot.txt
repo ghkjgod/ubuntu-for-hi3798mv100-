@@ -1,0 +1,34 @@
+6.12.114-hi3798-mv100-exp
+/dev/mmcblk0p9[/noble-system] ext4
+active
+active
+active
+[    15.484] (II) modeset(0): glamor X acceleration enabled on Mali450
+Screen 0: minimum 320 x 200, current 1920 x 1080, maximum 4096 x 4096
+None-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+   1920x1080     60.00*+
+GL_VERSION: OpenGL ES 2.0 Mesa 25.2.8-0ubuntu0.24.04.5
+GL_RENDERER: Mali450
+GL_RENDERER: Mali450
+EGL 1.5; GL_RENDERER=Mali450
+GPU single-frame pixel=128,128,64,255 error=0
+0-3
+400000 600000 800000 1000000
+200000000 250000000 300000000 345600000 375000000 400000000
+     From  :   To
+           : 200000000 250000000 300000000 345600000 375000000 400000000   time(ms)
+* 200000000:         0         0         0         0         0         6      5630
+  250000000:         0         0         0         0         0         0         0
+  300000000:         0         0         0         0         0         1        70
+  345600000:         0         0         0         0         0         0         0
+  375000000:         0         0         0         0         0         0         0
+  400000000:         6         0         1         0         0         0       540
+Total transition : 14
+100
+full
+/srv/tf /dev/mmcblk1p1 ext4   rw,nosuid,nodev,noatime
+SU08G
+N: Name="Logitech Wireless Receiver Mouse"
+eth0:ethernet:connected
+lo:loopback:connected (externally)
+wlan0:wifi:disconnected

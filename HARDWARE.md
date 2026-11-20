@@ -1,5 +1,13 @@
 # EC6108V9C 真机验收
 
+## 2026-11-20 · Linux 6.12.114 与 Mali450
+
+从 eMMC p6 冷启动，Ubuntu 根仍位于 p9。Xorg 报告 `glamor X acceleration enabled on Mali450`。普通 X11 GLES 程序返回 `GL_RENDERER: Mali450`，离屏绘制回读像素为 `128,128,64,255`，GL 错误为 0。采集端拍到 Xfce 中运行的 GLES 三角形。[冷启动检查](evidence/linux-6.12.114-coldboot.txt) · [HDMI 实拍](evidence/linux-6.12.114-hdmi.png)
+
+4 个 CPU 核在线，策略范围为 400–1000 MHz。GPU 的 devfreq 统计记录了 200 MHz 和 400 MHz 两档的运行时间。桌面与 HDMI 发送端使用固定 1080p60，当前 simpledrm 只公布这一模式。采集验证了画面，采集器没有提供独立测量 HDMI 输入刷新率的读数。此版本尚无 2560×1440 模式或自动 EDID 选模。Chromium 的启动参数仍为 `--disable-gpu`。
+
+冷启动经专用网口 DHCP 和 SSH 登录，链路 100 Mbps 全双工。SU08G TF 以 ext4 挂载在 `/srv/tf`。Logitech USB 鼠标产生了事件设备。独立键盘本次未枚举。RTL8188FU 使用内核 rtl8xxxu 驱动，试启动扫描到 27 条 BSS，并用临时连接配置通过 WPA2 关联及 DHCP。内核识别该 USB 芯片为 Wi-Fi 单功能，BT=0。两次受控供电均以 GPIO25=0 结束。
+
 ## 2026-11-20 · 有线 DHCP 和开机 SSH
 
 COM6 的 CP210x 在盒子开机时返回 Linux 登录提示，随后完成双向串口登录。通过专用网口传送并校验 Ubuntu 签名仓库的 armhf 软件包，在现有 eMMC 系统上原位安装 OpenSSH 9.6p1（Ubuntu 3ubuntu13.20）。测试全程使用外部供电和网线。镜像与实机采用相同的有线配置、SSH 二进制和 systemd 启动配置。

@@ -2,7 +2,9 @@
 
 上电从 eMMC p9 进入 Ubuntu 24.04.5 LTS armhf。系统、root 主目录和浏览器配置保存在 eMMC。8 GB TF 的单个 ext4 分区挂载在 `/srv/tf`，桌面可通过 `~/TF` 访问。Ubuntu 的启动选择独立于 TF 是否插入。
 
-Xorg 使用海思 HIFB，Xfce 关闭合成。LightDM 免密码自动进入本地 root 桌面。IBus 提供智能拼音，Super+Space 切换输入法。Chromium 使用独立的普通用户运行，另装有 NetSurf。NetworkManager 管理 Wi-Fi 和有线网口。接入提供 DHCP 的路由器后，按主机名 `hi3798-desktop` 查找 IPv4 地址。[真机验收与 HDMI 采集帧](HARDWARE.md)
+实测盒子的默认内核为 Linux 6.12.114，Xorg 使用 Mesa Lima 驱动 Mali450 加速。HDMI 输出为 1920×1080、60 Hz。原厂 4.4 内核可从台架恢复，使用海思 HIFB。内核升级包和基础 Ubuntu 根文件系统分别交付。[升级、检测和回退说明](board/linux-6.12/README.md)
+
+LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。基础根文件系统提供 IBus 智能拼音，Super+Space 切换输入法。Chromium 使用独立的普通用户运行，另装有 NetSurf。NetworkManager 管理 Wi-Fi 和有线网口。接入提供 DHCP 的路由器后，按主机名 `hi3798-desktop` 查找 IPv4 地址。[真机验收与 HDMI 采集帧](HARDWARE.md)
 
 ## 无屏 SSH 登录
 

@@ -1,0 +1,106 @@
+--- a/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima-mp2.dts
++++ b/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima-mp2.dts
+@@ -7,3 +7,49 @@
+                  <GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 94 IRQ_TYPE_LEVEL_HIGH>;
+     interrupt-names = "gp", "gpmmu", "pp0", "ppmmu0", "pp1", "ppmmu1", "pmu", "pp";
+ };
++
++/ {
++	model = "Huawei EC6108V9C Hi3798MV100";
++	aliases {
++		mmc1 = &sdcard;
++	};
++};
++
++&eth0 {
++	local-mac-address = [00 11 22 33 44 55];
++};
++
++&{/soc} {
++	sdcard: mmc@f9820000 {
++		compatible = "hisilicon,hi3798cv200-dw-mshc";
++		reg = <0xf9820000 0x1000>;
++		interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&crg HISTB_SDIO0_CIU_CLK>, <&crg HISTB_SDIO0_BIU_CLK>,
++			 <&crg HISTB_SDIO0_SAMPLE_CLK>, <&crg HISTB_SDIO0_DRV_CLK>;
++		clock-names = "ciu", "biu", "ciu-sample", "ciu-drive";
++		resets = <&crg 0x9c 4>;
++		reset-names = "reset";
++		bus-width = <4>;
++		max-frequency = <25000000>;
++		cap-sd-highspeed;
++		disable-wp;
++		no-1-8-v;
++		no-mmc;
++		no-sdio;
++		broken-cd;
++	};
++	usb@f9880000 {
++		compatible = "generic-ohci";
++		reg = <0xf9880000 0x10000>;
++		interrupts = <GIC_SPI 67 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&crg HISTB_USB2_BUS_CLK>, <&crg HISTB_USB2_48M_CLK>,
++			 <&crg HISTB_USB2_12M_CLK>;
++	};
++	usb@f9920000 {
++		compatible = "generic-ohci";
++		reg = <0xf9920000 0x10000>;
++		interrupts = <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&crg HI3798MV100_USB2_2_BUS_CLK>, <&crg HI3798MV100_USB2_2_48M_CLK>,
++			 <&crg HI3798MV100_USB2_2_12M_CLK>;
++	};
++};
+--- a/arch/arm/boot/dts/hisilicon/hi3798mv100-codex.dts
++++ b/arch/arm/boot/dts/hisilicon/hi3798mv100-codex.dts
+@@ -4,7 +4,7 @@
+ / {
+ 	model = "Hi3798MV100 experimental diagnostic target";
+ 	chosen {
+-		bootargs = "root=/dev/sda4 rw rootwait";
++		bootargs = "root=/dev/mmcblk0p9 rw rootwait";
+ 		stdout-path = "serial0:115200n8";
+ 	};
+ 	memory@0 {
+--- a/drivers/clk/hisilicon/crg-hi3798mv100.c
++++ b/drivers/clk/hisilicon/crg-hi3798mv100.c
+@@ -93,6 +93,12 @@
+ 		mmc_phase_regvals, ARRAY_SIZE(mmc_phase_regvals) },
+ 	{ HISTB_MMC_DRV_CLK, "mmc_drive", "clk_mmc_ciu",
+ 		CLK_SET_RATE_PARENT, 0xa0, 16, 3, mmc_phase_degrees,
++		mmc_phase_regvals, ARRAY_SIZE(mmc_phase_regvals) },
++	{ HISTB_SDIO0_SAMPLE_CLK, "sdio0_sample", "clk_sdio0_ciu",
++		CLK_SET_RATE_PARENT, 0x9c, 12, 3, mmc_phase_degrees,
++		mmc_phase_regvals, ARRAY_SIZE(mmc_phase_regvals) },
++	{ HISTB_SDIO0_DRV_CLK, "sdio0_drive", "clk_sdio0_ciu",
++		CLK_SET_RATE_PARENT, 0x9c, 16, 3, mmc_phase_degrees,
+ 		mmc_phase_regvals, ARRAY_SIZE(mmc_phase_regvals) },
+ };
+ 
+--- a/hi3798/display-init/build-display-init-port.py
++++ b/hi3798/display-init/build-display-init-port.py
+@@ -25,6 +25,14 @@
+ shutil.copytree(disp/'vdp_v2_0', staged/'vdp_v2_0', dirs_exist_ok=True)
+ shutil.copytree(product/'driver/hdmi/hdmi_1_4', staged/'hdmi_1_4', dirs_exist_ok=True)
+ disp = staged
++# The display SDK also calls this wrapper before the transmitter reset.
++# Defer the single allowed open to mv100_sdk_hdmi_start after PHY init.
++hdmi = staged/'hdmi_1_4/hdmi.c'
++code = hdmi.read_bytes()
++early = b's32RetVal = HI_UNF_HDMI_Open(HI_UNF_HDMI_ID_0,hdmi_Disp2EncFmt(enFormat));'
++if code.count(early) != 1:
++    raise RuntimeError('Unexpected SDK HDMI open sequence')
++hdmi.write_bytes(code.replace(early, b's32RetVal = HI_SUCCESS;'))
+ vdp = staged/'vdp_v2_0/hal/3798m/vdp_driver.c'
+ t = vdp.read_text(errors='surrogateescape')
+ for function in ['VDP_CBM_GetMAXLayer', 'VDP_GFX_SetLayerEnable']:
+--- a/hi3798/verify-dtb.py
++++ b/hi3798/verify-dtb.py
+@@ -109,7 +109,7 @@
+     records.append({'variant': variant, 'nodes': len(tree), 'clock_references_checked': clock_references,
+                     'reset_references_checked': reset_references, 'binary_dtb_checks': 'passed'})
+ 
+-assert subprocess.check_output(['git', '-C', str(src), 'diff', 'upstream/linux-6.12.y', '--', 'drivers/clk/hisilicon/crg-hi3798cv200.c']) == b''
++assert (src / 'drivers/clk/hisilicon/crg-hi3798cv200.c').read_bytes() == (src.parent / 'upstream-v6.12.114-crg.c').read_bytes()
+ (out / 'dtb-verification.json').write_text(json.dumps(records, indent=2) + '\n')
+ print(json.dumps(records, indent=2))
+ 

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec env MESA_LOADER_DRIVER_OVERRIDE=pl111 MV100_KMSRO_LIMA_ONLY=1 LD_PRELOAD=/usr/local/lib/histb-lima/libkmsro-lima-select.so "$@"
