@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Hi3798 desktop defaults
+Exec=/usr/local/bin/histb-desktop-defaults
+OnlyShowIn=XFCE;
+NoDisplay=true

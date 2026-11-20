@@ -1,0 +1,13 @@
+[Unit]
+Description=Hi3798 compressed RAM swap
+ConditionKernelVersion=6.12.114-hi3798-*
+ConditionPathExists=/sys/block/zram0/disksize
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/histb-zram
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

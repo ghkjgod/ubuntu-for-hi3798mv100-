@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+driver=/sys/bus/usb/drivers/rtl8xxxu
+for intf in "$driver"/*:*; do
+    [ -L "$intf" ] || continue
+    device=$(dirname "$(readlink -f "$intf")")
+    if [ "$(cat "$device/idVendor"):$(cat "$device/idProduct")" = 0bda:f179 ]; then
+        # Disconnect while the USB host is live so rtl8xxxu can power down its MCU.
+        printf '%s' "${intf##*/}" >"$driver/unbind"
+    fi
+done

@@ -1,0 +1,15 @@
+--- a/hi3798/display-init/build-display-init-port.py
++++ b/hi3798/display-init/build-display-init-port.py
+@@ -37,6 +37,12 @@
+ before = b'if ( (pstTiming->u32VertFreq / 1000) > 120)'
+ if data.count(before) != 1:
+     raise RuntimeError('SDK timing validation changed')
++# Custom input uses millihertz. The SDK's interrupt threshold consumes
++# hundredths of a hertz, as do its built-in mode tables.
++assign = b'stCfg.stInfo.u32RefreshRate = pstTiming->u32VertFreq;'
++if data.count(assign) != 1:
++    raise RuntimeError('Unexpected SDK custom refresh-rate conversion')
++data = data.replace(assign, b'stCfg.stInfo.u32RefreshRate = (pstTiming->u32VertFreq + 5) / 10;')
+ hal.write_bytes(data.replace(before, b'if (!pstTiming->u32PixFreq && (pstTiming->u32VertFreq / 1000) > 120)'))
+ # The display SDK also calls this wrapper before the transmitter reset.
+ # Defer the single allowed open to mv100_sdk_hdmi_start after PHY init.

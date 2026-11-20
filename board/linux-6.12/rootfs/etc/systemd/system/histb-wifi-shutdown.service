@@ -1,0 +1,15 @@
+[Unit]
+Description=Quiesce the onboard RTL8188FU before reboot
+ConditionKernelVersion=6.12.114-hi3798-*
+ConditionPathExists=/sys/bus/usb/drivers/rtl8xxxu
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+ExecStop=/usr/local/sbin/histb-wifi-stop
+TimeoutStopSec=10s
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

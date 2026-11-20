@@ -32,9 +32,12 @@ thunar
 adwaita-icon-theme
 fonts-dejavu-core
 fonts-wqy-microhei
-ibus
-ibus-gtk3
-ibus-libpinyin
+fcitx-bin
+fcitx-module-dbus
+fcitx-module-x11
+fcitx-frontend-gtk3
+fcitx-ui-classic
+fcitx-googlepinyin
 netsurf-gtk
 evtest
 fbset

@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+cpu=/sys/devices/system/cpu/cpufreq/policy0
+gpu=/sys/class/devfreq/f9200000.gpu
+state=/var/lib/histb-performance
+mode=${1:-status}
+case "$mode" in
+    status)
+        printf 'CPU governor, current kHz, minimum kHz, maximum kHz\n'
+        cat "$cpu/scaling_governor" "$cpu/scaling_cur_freq" "$cpu/scaling_min_freq" "$cpu/scaling_max_freq"
+        printf 'GPU governor, current Hz, minimum Hz, maximum Hz\n'
+        cat "$gpu/governor" "$gpu/cur_freq" "$gpu/min_freq" "$gpu/max_freq"
+        exit 0 ;;
+    apply|balanced|full) ;;
+    *) echo 'Usage: histb-performance [status|balanced|full|apply]' >&2; exit 2 ;;
+esac
+test "$(id -u)" = 0
+tr '\000' '\n' </proc/device-tree/compatible | grep -qx 'hisilicon,hi3798mv100'
+mkdir -p "$state"
+exec 9>"$state/lock"
+flock -x 9
+requested=$mode
+if [ "$mode" = apply ]; then
+    mode=balanced
+    if [ -s "$state/mode" ]; then read -r mode <"$state/mode"; fi
+fi
+case "$mode" in
+    balanced) governor=schedutil ;;
+    full) governor=performance ;;
+    *) echo 'Unknown saved performance profile' >&2; exit 1 ;;
+esac
+set -- $(cat "$gpu/available_frequencies" | tr ' ' '\n' | sed '/^$/d' | sort -n)
+test "$#" -gt 0
+floor=$1
+for ceiling do :; done
+if [ "$mode" = full ]; then floor=$ceiling; fi
+cat "$cpu/cpuinfo_max_freq" >"$cpu/scaling_max_freq"
+cat "$cpu/cpuinfo_min_freq" >"$cpu/scaling_min_freq"
+printf '%s\n' "$governor" >"$cpu/scaling_governor"
+printf '%s\n' "$ceiling" >"$gpu/max_freq"
+printf '%s\n' "$floor" >"$gpu/min_freq"
+printf 'simple_ondemand\n' >"$gpu/governor"
+if [ "$requested" != apply ]; then
+    printf '%s\n' "$mode" >"$state/mode.new"
+    mv -f "$state/mode.new" "$state/mode"
+fi

@@ -1,0 +1,910 @@
+--- a/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-display.dts
++++ b/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-display.dts
+@@ -5,8 +5,8 @@
+         #address-cells = <1>;
+         #size-cells = <1>;
+         ranges;
+-        framebuffer@3e000000 {
+-            reg = <0x3e000000 0x800000>;
++        framebuffer@3a000000 {
++            reg = <0x3a000000 0x2400000>;
+             no-map;
+         };
+     };
+@@ -14,9 +14,9 @@
+         #address-cells = <1>;
+         #size-cells = <1>;
+         ranges;
+-        framebuffer@3e000000 {
+-            compatible = "simple-framebuffer";
+-            reg = <0x3e000000 0x800000>;
++        framebuffer@3a000000 {
++            compatible = "hisilicon,mv100-hdmi-fb", "simple-framebuffer";
++            reg = <0x3a000000 0x2400000>;
+             width = <1920>;
+             height = <1080>;
+             stride = <7680>;
+--- a/drivers/gpu/drm/tiny/Makefile
++++ b/drivers/gpu/drm/tiny/Makefile
+@@ -6,6 +6,7 @@
+ obj-$(CONFIG_DRM_GM12U320)		+= gm12u320.o
+ obj-$(CONFIG_DRM_OFDRM)			+= ofdrm.o
+ obj-$(CONFIG_DRM_PANEL_MIPI_DBI)	+= panel-mipi-dbi.o
++obj-$(CONFIG_HI3798MV100_DISPLAY_INIT) += hi3798mv100-init/
+ obj-$(CONFIG_DRM_SIMPLEDRM)		+= simpledrm.o
+ obj-$(CONFIG_TINYDRM_HX8357D)		+= hx8357d.o
+ obj-$(CONFIG_TINYDRM_ILI9163)		+= ili9163.o
+@@ -17,4 +18,3 @@
+ obj-$(CONFIG_TINYDRM_ST7586)		+= st7586.o
+ obj-$(CONFIG_TINYDRM_ST7735R)		+= st7735r.o
+ 
+-obj-$(CONFIG_HI3798MV100_DISPLAY_INIT) += hi3798mv100-init/
+--- a/drivers/gpu/drm/tiny/hi3798mv100-init/Makefile
++++ b/drivers/gpu/drm/tiny/hi3798mv100-init/Makefile
+@@ -4,5 +4,5 @@
+ targets += display-init-lib.o
+ quiet_cmd_mv100_sdk = MV100SDK $@
+       cmd_mv100_sdk = python3 $(srctree)/hi3798/display-init/build-display-init-port.py --raw-only --out $(obj)/vendor && cp $(obj)/vendor/display-init-lib.o_shipped $@
+-$(obj)/display-init-lib.o: $(srctree)/hi3798/display-init/build-display-init-port.py $(srctree)/hi3798/display-init/display-pdm-defaults.c FORCE
++$(obj)/display-init-lib.o: $(srctree)/hi3798/display-init/build-display-init-port.py $(srctree)/hi3798/display-init/display-pdm-defaults.c $(srctree)/hi3798/display-init/modes.def $(srctree)/hi3798/display-init/wire.h FORCE
+ 	$(call if_changed,mv100_sdk)
+--- a/drivers/gpu/drm/tiny/hi3798mv100-init/display-linux-adapter.c
++++ b/drivers/gpu/drm/tiny/hi3798mv100-init/display-linux-adapter.c
+@@ -5,6 +5,8 @@
+ #include <linux/delay.h>
+ #include <linux/of.h>
+ #include <linux/slab.h>
++#include <linux/mutex.h>
++#include "../../../../../hi3798/display-init/wire.h"
+ 
+ extern int HI_UNF_DISP_Init(void);
+ extern int HI_UNF_DISP_Open(int display);
+@@ -22,9 +24,36 @@
+ 
+ void *g_pstRegCrg;
+ static bool enable = true;
+-static bool direct_pattern;
++static DEFINE_MUTEX(hdmi_lock);
++static bool mapped;
++static int current_mode = -1;
++extern void mv100_sdk_select(int, const struct mv100_wire *);
++extern int mv100_sdk_edid(unsigned int, unsigned char *, unsigned int);
++extern unsigned int mv100_sdk_hpd(void);
++int mv100_display_edid(void *context, u8 *buf, unsigned int block, size_t len)
++{
++    int ret;
++    if (!READ_ONCE(mapped))
++        return -ENODEV;
++    mutex_lock(&hdmi_lock);
++    ret = mv100_sdk_edid(block, buf, len);
++    mutex_unlock(&hdmi_lock);
++    return ret ? -EIO : 0;
++}
++bool mv100_display_connected(void)
++{
++    bool connected;
++    if (!READ_ONCE(mapped))
++        return false;
++    mutex_lock(&hdmi_lock);
++    connected = mv100_sdk_hpd();
++    if (!connected)
++        current_mode = -1;
++    mutex_unlock(&hdmi_lock);
++    return connected;
++}
+ module_param(enable, bool, 0444);
+-module_param(direct_pattern, bool, 0444);
++
+ MODULE_PARM_DESC(enable, "Explicitly enable experimental HDMI background initialization");
+ static bool opened;
+ static bool gfx_active;
+@@ -36,7 +65,7 @@
+         return scnprintf(buffer, PAGE_SIZE, "inactive\n");
+     mv100_sdk_gfx_dump();
+     if (gfx_active) {
+-        fb = ioremap_wc(0x3e000000, 4096);
++        fb = ioremap_wc(0x3a000000, 4096);
+         if (fb) {
+             pixel = readl(fb);
+             iounmap(fb);
+@@ -124,18 +153,61 @@
+     const __be32 *reg;
+     int length;
+     bool valid;
+-    node = of_find_node_by_path("/reserved-memory/framebuffer@3e000000");
++    node = of_find_node_by_path("/reserved-memory/framebuffer@3a000000");
+     reg = node ? of_get_property(node, "reg", &length) : NULL;
+-    valid = reg && length == 8 && be32_to_cpup(reg) == 0x3e000000 &&
+-        be32_to_cpup(reg + 1) == 0x800000 && of_property_read_bool(node, "no-map");
++    valid = reg && length == 8 && be32_to_cpup(reg) == 0x3a000000 &&
++        be32_to_cpup(reg + 1) == 0x2400000 && of_property_read_bool(node, "no-map");
+     of_node_put(node);
+     return valid;
+ }
+ 
++int mv100_display_set(int index, const struct mv100_wire *wire)
++{
++    unsigned int width = wire->w, height = wire->h;
++    int ret;
++    if (!READ_ONCE(mapped))
++        return -ENODEV;
++    mutex_lock(&hdmi_lock);
++    if (index >= 0 && index == current_mode && opened) {
++        mutex_unlock(&hdmi_lock);
++        return 0;
++    }
++    if (opened) {
++        HI_UNF_DISP_Close(1);
++        HI_UNF_DISP_DeInit();
++        opened = false;
++    }
++    current_mode = -1;
++    gfx_active = false;
++    mv100_sdk_select(index, wire);
++    ret = HI_UNF_DISP_Init();
++    if (!ret) {
++        ret = HI_UNF_DISP_Open(1);
++        opened = !ret;
++    }
++    if (!ret)
++        ret = mv100_sdk_hdmi_start();
++    if (!ret) {
++        mv100_sdk_gfx_start(0x3a000000);
++        mv100_sdk_gfx_dump();
++        gfx_active = true;
++        current_mode = index;
++        pr_info("MV100 HDMI mode index=%d desktop=%ux%u pitch=%u\n",
++                index, width, height, ALIGN(width * 4, 16));
++    } else {
++        if (opened)
++            HI_UNF_DISP_Close(1);
++        HI_UNF_DISP_DeInit();
++        opened = false;
++        pr_err("MV100 HDMI failed to program mode %d: %d\n", index, ret);
++    }
++    mutex_unlock(&hdmi_lock);
++    return ret;
++}
++
+ static int __init display_init(void)
+ {
+     unsigned int i;
+-    int ret;
+     if (!of_machine_is_compatible("hisilicon,hi3798mv100"))
+         return -ENODEV;
+     if (!reserved_framebuffer_present()) {
+@@ -154,54 +226,9 @@
+         }
+     }
+     g_pstRegCrg = mv100_mmio_address(0xf8a22000);
+-    ret = HI_UNF_DISP_Init();
+-    pr_info("MV100 display init returned %d\n", ret);
+-    if (!ret) {
+-        ret = HI_UNF_DISP_Open(1);
+-        pr_info("MV100 display open HD returned %d\n", ret);
+-        opened = !ret;
+-        if (!ret) {
+-            ret = mv100_sdk_hdmi_start();
+-            pr_info("MV100 explicit HDMI init/open returned %d\n", ret);
+-        }
+-    }
+-    if (ret) {
+-        if (opened)
+-            HI_UNF_DISP_Close(1);
+-        HI_UNF_DISP_DeInit();
+-        opened = false;
+-        gfx_active = false;
+-        release_regions();
+-    } else {
+-        struct device_node *node;
+-        const __be32 *reg;
+-        int length;
+-        node = of_find_node_by_path("/reserved-memory/framebuffer@3e000000");
+-        reg = node ? of_get_property(node, "reg", &length) : NULL;
+-        if (reg && length == 8 &&
+-            be32_to_cpup(reg) == 0x3e000000 && be32_to_cpup(reg + 1) == 0x800000 &&
+-            of_property_read_bool(node, "no-map")) {
+-            mv100_sdk_gfx_start(0x3e000000);
+-            gfx_active = true;
+-            if (direct_pattern) {
+-                static const u32 colors[] = {0xffffffff, 0xffffff00, 0xff00ffff,
+-                    0xff00ff00, 0xffff00ff, 0xffff0000, 0xff0000ff, 0xff000000};
+-                void __iomem *fb = ioremap_wc(0x3e000000, 0x800000);
+-                unsigned int x, y;
+-                if (fb) {
+-                    for (y = 0; y < 1080; ++y)
+-                        for (x = 0; x < 1920; ++x)
+-                            writel_relaxed(colors[x / 240], fb + (y * 1920 + x) * 4);
+-                    wmb();
+-                    pr_info("MV100 direct framebuffer pattern: first pixel %08x\n", readl(fb));
+-                    iounmap(fb);
+-                }
+-            }
+-            pr_info("MV100 G0 scanout: reserved framebuffer 3e000000 1920x1080 stride 7680\n");
+-        }
+-        of_node_put(node);
+-    }
+-    return ret;
++    WRITE_ONCE(mapped, true);
++    mv100_display_set(0, &(struct mv100_wire){ .w = 1920, .h = 1080 });
++    return 0;
+ }
+ 
+ static void __exit display_exit(void)
+--- a/drivers/gpu/drm/tiny/simpledrm.c
++++ b/drivers/gpu/drm/tiny/simpledrm.c
+@@ -252,6 +252,7 @@
+  */
+ 
+ struct simpledrm_device {
++	bool mv100;
+ 	struct drm_device dev;
+ 
+ 	/* clocks */
+@@ -610,6 +611,91 @@
+  * Modesetting
+  */
+ 
++/* The firmware framebuffer on this board is backed by a programmable VDP. */
++#include <drm/drm_edid.h>
++
++#include "../../../../hi3798/display-init/wire.h"
++#if !IS_BUILTIN(CONFIG_HI3798MV100_DISPLAY_INIT)
++static inline bool mv100_display_connected(void) { return false; }
++static inline int mv100_display_edid(void *p, u8 *b, unsigned int n, size_t l) { return -ENODEV; }
++static inline int mv100_display_set(int i, const struct mv100_wire *m) { return -ENODEV; }
++#endif
++#define ROW(id, clk, w, hf, hs, ht, h, vf, vs, vt, nh, nv, inter) \
++    { .clock = clk, .hdisplay = w, .hsync_start = w+hf, .hsync_end = w+hf+hs, .htotal = ht, \
++      .vdisplay = h, .vsync_start = h+vf, .vsync_end = h+vf+vs, .vtotal = vt, \
++      .flags = (nh ? DRM_MODE_FLAG_NHSYNC : DRM_MODE_FLAG_PHSYNC) | \
++               (nv ? DRM_MODE_FLAG_NVSYNC : DRM_MODE_FLAG_PVSYNC) | (inter ? DRM_MODE_FLAG_INTERLACE : 0), \
++      .type = DRM_MODE_TYPE_DRIVER },
++static const struct drm_display_mode mv100_modes[] = {
++#include "../../../../hi3798/display-init/modes.def"
++};
++#undef ROW
++
++static int mv100_find_mode(const struct drm_display_mode *m)
++{
++    unsigned int i;
++    if (m->flags & (DRM_MODE_FLAG_DBLSCAN | DRM_MODE_FLAG_DBLCLK | DRM_MODE_FLAG_3D_MASK))
++        return -1;
++    for (i = 0; i < ARRAY_SIZE(mv100_modes); ++i) {
++        const struct drm_display_mode *v = &mv100_modes[i];
++        if (v->hdisplay != m->hdisplay || v->vdisplay != m->vdisplay ||
++            v->htotal != m->htotal || v->vtotal != m->vtotal ||
++            v->hsync_start != m->hsync_start || v->hsync_end != m->hsync_end ||
++            v->vsync_start != m->vsync_start || v->vsync_end != m->vsync_end ||
++            v->flags != m->flags ||
++            v->clock != m->clock)
++            continue;
++        return i;
++    }
++    return -1;
++}
++
++static bool mv100_custom_valid(const struct drm_display_mode *m)
++{
++    /* Limits of the native XRGB plane, MV100 HDMI 1.4 PHY and timing fields. */
++    return !(m->flags & ~(DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NHSYNC |
++                           DRM_MODE_FLAG_PVSYNC | DRM_MODE_FLAG_NVSYNC)) &&
++        m->clock >= 20000 && m->clock <= 297000 &&
++        m->hdisplay >= 320 && m->hdisplay <= 4096 &&
++        m->vdisplay >= 200 && m->vdisplay <= 2160 &&
++        m->hsync_start > m->hdisplay && m->hsync_end > m->hsync_start &&
++        m->htotal >= m->hsync_end && m->vsync_start > m->vdisplay &&
++        m->vsync_end > m->vsync_start && m->vtotal >= m->vsync_end &&
++        m->vtotal - m->vsync_start <= 1024 && m->vsync_start - m->vdisplay <= 1024 &&
++        m->vsync_end - m->vsync_start <= 256;
++}
++
++static void mv100_program_crtc(struct drm_crtc *crtc)
++{
++    struct simpledrm_device *sdev = simpledrm_device_of_dev(crtc->dev);
++    const struct drm_display_mode *m = &crtc->state->adjusted_mode;
++    struct mv100_wire wire = {
++        .w=m->hdisplay, .h=m->vdisplay, .clock=m->clock,
++        .hfp=m->hsync_start-m->hdisplay, .hpw=m->hsync_end-m->hsync_start,
++        .hbb=m->htotal-m->hsync_start, .vfp=m->vsync_start-m->vdisplay,
++        .vpw=m->vsync_end-m->vsync_start, .vbb=m->vtotal-m->vsync_start,
++        .neg_h=!!(m->flags & DRM_MODE_FLAG_NHSYNC), .neg_v=!!(m->flags & DRM_MODE_FLAG_NVSYNC),
++    };
++    int index;
++    if (!sdev->mv100)
++        return;
++    index = mv100_find_mode(m);
++    if (index < 0 && !mv100_custom_valid(m))
++        return;
++    wire.millihz = DIV_ROUND_CLOSEST_ULL((u64)m->clock * 1000000, (u32)m->htotal * m->vtotal);
++    sdev->mode = *m;
++    sdev->pitch = ALIGN(m->hdisplay * 4, 16);
++    if (mv100_display_set(index, &wire))
++        drm_err(crtc->dev, "MV100 modeset failed for %s\n", m->name);
++}
++
++static enum drm_connector_status mv100_detect(struct drm_connector *con, bool force)
++{
++    if (!simpledrm_device_of_dev(con->dev)->mv100)
++        return connector_status_connected;
++    return mv100_display_connected() ? connector_status_connected : connector_status_disconnected;
++}
++
+ static const uint64_t simpledrm_primary_plane_format_modifiers[] = {
+ 	DRM_FORMAT_MOD_LINEAR,
+ 	DRM_FORMAT_MOD_INVALID
+@@ -645,7 +731,7 @@
+ 
+ 		/* format conversion necessary; reserve buffer */
+ 		buf = drm_format_conv_state_reserve(&new_shadow_plane_state->fmtcnv_state,
+-						    sdev->pitch, GFP_KERNEL);
++						    sdev->mv100 ? ALIGN(new_crtc_state->mode.hdisplay * 4, 16) : sdev->pitch, GFP_KERNEL);
+ 		if (!buf)
+ 			return -ENOMEM;
+ 	}
+@@ -741,6 +827,9 @@
+ {
+ 	struct simpledrm_device *sdev = simpledrm_device_of_dev(crtc->dev);
+ 
++	if (sdev->mv100)
++		return (mv100_find_mode(mode) >= 0 || mv100_custom_valid(mode)) ? MODE_OK : MODE_BAD;
++
+ 	return drm_crtc_helper_mode_valid_fixed(crtc, mode, &sdev->mode);
+ }
+ 
+@@ -750,6 +839,7 @@
+  * the screen in the primary plane's atomic_disable function.
+  */
+ static const struct drm_crtc_helper_funcs simpledrm_crtc_helper_funcs = {
++	.mode_set_nofb = mv100_program_crtc,
+ 	.mode_valid = simpledrm_crtc_helper_mode_valid,
+ 	.atomic_check = drm_crtc_helper_atomic_check,
+ };
+@@ -771,7 +861,30 @@
+ {
+ 	struct simpledrm_device *sdev = simpledrm_device_of_dev(connector->dev);
+ 
+-	return drm_connector_helper_get_modes_fixed(connector, &sdev->mode);
++	if (sdev->mv100) {
++        const struct drm_edid *edid = drm_edid_read_custom(connector, mv100_display_edid, NULL);
++        unsigned int i;
++        int count = 0;
++        drm_edid_connector_update(connector, edid);
++        if (edid) {
++            count = drm_edid_connector_add_modes(connector);
++            drm_edid_free(edid);
++            return count;
++        }
++        /* A capture bridge may not provide EDID. Prefer the boot-safe mode. */
++        for (i = 0; i < ARRAY_SIZE(mv100_modes); ++i) {
++            struct drm_display_mode *m = drm_mode_duplicate(connector->dev, &mv100_modes[i]);
++            if (!m)
++                break;
++            if (!i)
++                m->type |= DRM_MODE_TYPE_PREFERRED;
++            drm_mode_set_name(m);
++            drm_mode_probed_add(connector, m);
++            ++count;
++        }
++        return count;
++    }
++    return drm_connector_helper_get_modes_fixed(connector, &sdev->mode);
+ }
+ 
+ static const struct drm_connector_helper_funcs simpledrm_connector_helper_funcs = {
+@@ -779,6 +892,7 @@
+ };
+ 
+ static const struct drm_connector_funcs simpledrm_connector_funcs = {
++	.detect = mv100_detect,
+ 	.reset = drm_atomic_helper_connector_reset,
+ 	.fill_modes = drm_helper_probe_single_connector_modes,
+ 	.destroy = drm_connector_cleanup,
+@@ -918,7 +1032,9 @@
+ 	if (!height_mm)
+ 		height_mm = DRM_MODE_RES_MM(height, 96ul);
+ 
+-	sdev->mode = simpledrm_mode(width, height, width_mm, height_mm);
++	sdev->mv100 = IS_BUILTIN(CONFIG_HI3798MV100_DISPLAY_INIT) &&
++        of_device_is_compatible(of_node, "hisilicon,mv100-hdmi-fb");
++    sdev->mode = simpledrm_mode(width, height, width_mm, height_mm);
+ 	sdev->format = format;
+ 	sdev->pitch = stride;
+ 
+@@ -991,9 +1107,9 @@
+ 	max_width = max_t(unsigned long, width, DRM_SHADOW_PLANE_MAX_WIDTH);
+ 	max_height = max_t(unsigned long, height, DRM_SHADOW_PLANE_MAX_HEIGHT);
+ 
+-	dev->mode_config.min_width = width;
++	dev->mode_config.min_width = sdev->mv100 ? 320 : width;
+ 	dev->mode_config.max_width = max_width;
+-	dev->mode_config.min_height = height;
++	dev->mode_config.min_height = sdev->mv100 ? 200 : height;
+ 	dev->mode_config.max_height = max_height;
+ 	dev->mode_config.preferred_depth = format->depth;
+ 	dev->mode_config.funcs = &simpledrm_mode_config_funcs;
+@@ -1035,9 +1151,13 @@
+ 
+ 	connector = &sdev->connector;
+ 	ret = drm_connector_init(dev, connector, &simpledrm_connector_funcs,
+-				 DRM_MODE_CONNECTOR_Unknown);
++				 sdev->mv100 ? DRM_MODE_CONNECTOR_HDMIA : DRM_MODE_CONNECTOR_Unknown);
+ 	if (ret)
+ 		return ERR_PTR(ret);
++	if (sdev->mv100) {
++		connector->interlace_allowed = true;
++		connector->polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
++	}
+ 	drm_connector_helper_add(connector, &simpledrm_connector_helper_funcs);
+ 	drm_connector_set_panel_orientation_with_quirk(connector,
+ 						       DRM_MODE_PANEL_ORIENTATION_UNKNOWN,
+@@ -1103,6 +1223,11 @@
+ 		return PTR_ERR(sdev);
+ 	dev = &sdev->dev;
+ 
++	if (sdev->mv100) {
++		ret = drmm_kms_helper_poll_init(dev);
++		if (ret)
++			return ret;
++	}
+ 	ret = drm_dev_register(dev, 0);
+ 	if (ret)
+ 		return ret;
+--- a/hi3798/display-init/build-display-init-port.py
++++ b/hi3798/display-init/build-display-init-port.py
+@@ -25,6 +25,19 @@
+ shutil.copytree(disp/'vdp_v2_0', staged/'vdp_v2_0', dirs_exist_ok=True)
+ shutil.copytree(product/'driver/hdmi/hdmi_1_4', staged/'hdmi_1_4', dirs_exist_ok=True)
+ disp = staged
++# Custom progressive timings use the same RGB pin ordering as VESA PC modes.
++hal = staged/'vdp_v2_0/hal/common/drv_disp_hal.c'
++data = hal.read_bytes()
++before = b'if  ((eFmt >= HI_DRV_DISP_FMT_861D_640X480_60) && (eFmt < HI_DRV_DISP_FMT_3840X2160_24))'
++if data.count(before) != 1:
++    raise RuntimeError('SDK HDMI data path changed')
++data = data.replace(before, before[:-1] + b' || eFmt == HI_DRV_DISP_FMT_CUSTOM)')
++# With an explicit pixel clock, the PLL is independent of refresh rate.
++# Keep the SDK bound for its integer refresh-to-clock fallback.
++before = b'if ( (pstTiming->u32VertFreq / 1000) > 120)'
++if data.count(before) != 1:
++    raise RuntimeError('SDK timing validation changed')
++hal.write_bytes(data.replace(before, b'if (!pstTiming->u32PixFreq && (pstTiming->u32VertFreq / 1000) > 120)'))
+ # The display SDK also calls this wrapper before the transmitter reset.
+ # Defer the single allowed open to mv100_sdk_hdmi_start after PHY init.
+ hdmi = staged/'hdmi_1_4/hdmi.c'
+@@ -32,7 +45,16 @@
+ early = b's32RetVal = HI_UNF_HDMI_Open(HI_UNF_HDMI_ID_0,hdmi_Disp2EncFmt(enFormat));'
+ if code.count(early) != 1:
+     raise RuntimeError('Unexpected SDK HDMI open sequence')
+-hdmi.write_bytes(code.replace(early, b's32RetVal = HI_SUCCESS;'))
++code = code.replace(early, b's32RetVal = HI_SUCCESS;')
++# An explicit PHY reset starts a new configuration transaction.
++entry = b'HI_S32 HI_UNF_HDMI_Init()'
++pos = code.index(b'{', code.index(entry)) + 1
++code = code[:pos] + b'\n    g_HDMICnt = 0;\n' + code[pos:]
++# VESA clocks above 165 MHz need the same high-bandwidth PHY setup as UHD.
++code = code.replace(b'if ((enHdFmt <= HI_UNF_ENC_FMT_720P_50) || Support4K)',
++                    b'if ((enHdFmt <= HI_UNF_ENC_FMT_720P_50) || Support4K || (enHdFmt >= HI_UNF_ENC_FMT_VESA_2048X1152_60 && enHdFmt <= HI_UNF_ENC_FMT_VESA_2560X1600_60_RB))')
++code = code.replace(b'if(Support4K)', b'if(Support4K || (enHdFmt >= HI_UNF_ENC_FMT_VESA_2048X1152_60 && enHdFmt <= HI_UNF_ENC_FMT_VESA_2560X1600_60_RB))')
++hdmi.write_bytes(code)
+ vdp = staged/'vdp_v2_0/hal/3798m/vdp_driver.c'
+ t = vdp.read_text(errors='surrogateescape')
+ for function in ['VDP_CBM_GetMAXLayer', 'VDP_GFX_SetLayerEnable']:
+--- a/hi3798/display-init/display-linux-adapter.c
++++ b/hi3798/display-init/display-linux-adapter.c
+@@ -5,6 +5,8 @@
+ #include <linux/delay.h>
+ #include <linux/of.h>
+ #include <linux/slab.h>
++#include <linux/mutex.h>
++#include "wire.h"
+ 
+ extern int HI_UNF_DISP_Init(void);
+ extern int HI_UNF_DISP_Open(int display);
+@@ -22,9 +24,36 @@
+ 
+ void *g_pstRegCrg;
+ static bool enable = true;
+-static bool direct_pattern;
++static DEFINE_MUTEX(hdmi_lock);
++static bool mapped;
++static int current_mode = -1;
++extern void mv100_sdk_select(int, const struct mv100_wire *);
++extern int mv100_sdk_edid(unsigned int, unsigned char *, unsigned int);
++extern unsigned int mv100_sdk_hpd(void);
++int mv100_display_edid(void *context, u8 *buf, unsigned int block, size_t len)
++{
++    int ret;
++    if (!READ_ONCE(mapped))
++        return -ENODEV;
++    mutex_lock(&hdmi_lock);
++    ret = mv100_sdk_edid(block, buf, len);
++    mutex_unlock(&hdmi_lock);
++    return ret ? -EIO : 0;
++}
++bool mv100_display_connected(void)
++{
++    bool connected;
++    if (!READ_ONCE(mapped))
++        return false;
++    mutex_lock(&hdmi_lock);
++    connected = mv100_sdk_hpd();
++    if (!connected)
++        current_mode = -1;
++    mutex_unlock(&hdmi_lock);
++    return connected;
++}
+ module_param(enable, bool, 0444);
+-module_param(direct_pattern, bool, 0444);
++
+ MODULE_PARM_DESC(enable, "Explicitly enable experimental HDMI background initialization");
+ static bool opened;
+ static bool gfx_active;
+@@ -36,7 +65,7 @@
+         return scnprintf(buffer, PAGE_SIZE, "inactive\n");
+     mv100_sdk_gfx_dump();
+     if (gfx_active) {
+-        fb = ioremap_wc(0x3e000000, 4096);
++        fb = ioremap_wc(0x3a000000, 4096);
+         if (fb) {
+             pixel = readl(fb);
+             iounmap(fb);
+@@ -124,18 +153,61 @@
+     const __be32 *reg;
+     int length;
+     bool valid;
+-    node = of_find_node_by_path("/reserved-memory/framebuffer@3e000000");
++    node = of_find_node_by_path("/reserved-memory/framebuffer@3a000000");
+     reg = node ? of_get_property(node, "reg", &length) : NULL;
+-    valid = reg && length == 8 && be32_to_cpup(reg) == 0x3e000000 &&
+-        be32_to_cpup(reg + 1) == 0x800000 && of_property_read_bool(node, "no-map");
++    valid = reg && length == 8 && be32_to_cpup(reg) == 0x3a000000 &&
++        be32_to_cpup(reg + 1) == 0x2400000 && of_property_read_bool(node, "no-map");
+     of_node_put(node);
+     return valid;
+ }
+ 
++int mv100_display_set(int index, const struct mv100_wire *wire)
++{
++    unsigned int width = wire->w, height = wire->h;
++    int ret;
++    if (!READ_ONCE(mapped))
++        return -ENODEV;
++    mutex_lock(&hdmi_lock);
++    if (index >= 0 && index == current_mode && opened) {
++        mutex_unlock(&hdmi_lock);
++        return 0;
++    }
++    if (opened) {
++        HI_UNF_DISP_Close(1);
++        HI_UNF_DISP_DeInit();
++        opened = false;
++    }
++    current_mode = -1;
++    gfx_active = false;
++    mv100_sdk_select(index, wire);
++    ret = HI_UNF_DISP_Init();
++    if (!ret) {
++        ret = HI_UNF_DISP_Open(1);
++        opened = !ret;
++    }
++    if (!ret)
++        ret = mv100_sdk_hdmi_start();
++    if (!ret) {
++        mv100_sdk_gfx_start(0x3a000000);
++        mv100_sdk_gfx_dump();
++        gfx_active = true;
++        current_mode = index;
++        pr_info("MV100 HDMI mode index=%d desktop=%ux%u pitch=%u\n",
++                index, width, height, ALIGN(width * 4, 16));
++    } else {
++        if (opened)
++            HI_UNF_DISP_Close(1);
++        HI_UNF_DISP_DeInit();
++        opened = false;
++        pr_err("MV100 HDMI failed to program mode %d: %d\n", index, ret);
++    }
++    mutex_unlock(&hdmi_lock);
++    return ret;
++}
++
+ static int __init display_init(void)
+ {
+     unsigned int i;
+-    int ret;
+     if (!of_machine_is_compatible("hisilicon,hi3798mv100"))
+         return -ENODEV;
+     if (!reserved_framebuffer_present()) {
+@@ -154,54 +226,9 @@
+         }
+     }
+     g_pstRegCrg = mv100_mmio_address(0xf8a22000);
+-    ret = HI_UNF_DISP_Init();
+-    pr_info("MV100 display init returned %d\n", ret);
+-    if (!ret) {
+-        ret = HI_UNF_DISP_Open(1);
+-        pr_info("MV100 display open HD returned %d\n", ret);
+-        opened = !ret;
+-        if (!ret) {
+-            ret = mv100_sdk_hdmi_start();
+-            pr_info("MV100 explicit HDMI init/open returned %d\n", ret);
+-        }
+-    }
+-    if (ret) {
+-        if (opened)
+-            HI_UNF_DISP_Close(1);
+-        HI_UNF_DISP_DeInit();
+-        opened = false;
+-        gfx_active = false;
+-        release_regions();
+-    } else {
+-        struct device_node *node;
+-        const __be32 *reg;
+-        int length;
+-        node = of_find_node_by_path("/reserved-memory/framebuffer@3e000000");
+-        reg = node ? of_get_property(node, "reg", &length) : NULL;
+-        if (reg && length == 8 &&
+-            be32_to_cpup(reg) == 0x3e000000 && be32_to_cpup(reg + 1) == 0x800000 &&
+-            of_property_read_bool(node, "no-map")) {
+-            mv100_sdk_gfx_start(0x3e000000);
+-            gfx_active = true;
+-            if (direct_pattern) {
+-                static const u32 colors[] = {0xffffffff, 0xffffff00, 0xff00ffff,
+-                    0xff00ff00, 0xffff00ff, 0xffff0000, 0xff0000ff, 0xff000000};
+-                void __iomem *fb = ioremap_wc(0x3e000000, 0x800000);
+-                unsigned int x, y;
+-                if (fb) {
+-                    for (y = 0; y < 1080; ++y)
+-                        for (x = 0; x < 1920; ++x)
+-                            writel_relaxed(colors[x / 240], fb + (y * 1920 + x) * 4);
+-                    wmb();
+-                    pr_info("MV100 direct framebuffer pattern: first pixel %08x\n", readl(fb));
+-                    iounmap(fb);
+-                }
+-            }
+-            pr_info("MV100 G0 scanout: reserved framebuffer 3e000000 1920x1080 stride 7680\n");
+-        }
+-        of_node_put(node);
+-    }
+-    return ret;
++    WRITE_ONCE(mapped, true);
++    mv100_display_set(0, &(struct mv100_wire){ .w = 1920, .h = 1080 });
++    return 0;
+ }
+ 
+ static void __exit display_exit(void)
+--- a/hi3798/display-init/display-pdm-defaults.c
++++ b/hi3798/display-init/display-pdm-defaults.c
+@@ -5,18 +5,98 @@
+ #include "vdp_driver.h"
+ #include "hi_reg_common.h"
+ 
++#include "hdmitx.h"
++#include "si_edid.h"
++
++#define ROW(name, ...) HI_UNF_ENC_FMT_##name,
++static const HI_UNF_ENC_FMT_E formats[] = {
++#include "modes.def"
++};
++#undef ROW
++static unsigned int width = 1920, height = 1080, pitch = 7680;
++static HI_UNF_ENC_FMT_E timing = HI_UNF_ENC_FMT_1080P_60;
++#include "wire.h"
++static HI_UNF_DISP_TIMING_S custom;
++static HI_UNF_ENC_FMT_E wire_format;
++unsigned int mv100_sdk_hpd(void)
++{
++    return ReadByteHDMITXP0(TX_STAT_ADDR) & BIT_HPD_PIN;
++}
++void mv100_sdk_select(int index, const struct mv100_wire *m)
++{
++    width = m->w;
++    height = m->h;
++    pitch = (width * 4 + 15) & ~15U;
++    timing = index >= 0 ? formats[index] : HI_UNF_ENC_FMT_BUTT;
++    wire_format = timing;
++    switch (timing) {
++    case HI_UNF_ENC_FMT_3840X2160_23_976: wire_format = HI_UNF_ENC_FMT_3840X2160_24; break;
++    case HI_UNF_ENC_FMT_3840X2160_29_97: wire_format = HI_UNF_ENC_FMT_3840X2160_30; break;
++    case HI_UNF_ENC_FMT_720P_59_94: wire_format = HI_UNF_ENC_FMT_720P_60; break;
++    case HI_UNF_ENC_FMT_1080P_59_94: wire_format = HI_UNF_ENC_FMT_1080P_60; break;
++    case HI_UNF_ENC_FMT_1080P_29_97: wire_format = HI_UNF_ENC_FMT_1080P_30; break;
++    case HI_UNF_ENC_FMT_1080P_23_976: wire_format = HI_UNF_ENC_FMT_1080P_24; break;
++    case HI_UNF_ENC_FMT_1080i_59_94: wire_format = HI_UNF_ENC_FMT_1080i_60; break;
++    case HI_UNF_ENC_FMT_BUTT:
++        memset(&custom, 0, sizeof(custom));
++        custom.HACT = width; custom.VACT = height;
++        custom.HFB = m->hfp; custom.HBB = m->hbb; custom.HPW = m->hpw;
++        custom.VFB = m->vfp; custom.VBB = m->vbb; custom.VPW = m->vpw;
++        custom.IHS = m->neg_h; custom.IVS = m->neg_v;
++        custom.PixFreq = m->clock; custom.VertFreq = m->millihz;
++        custom.DataWidth = HI_DRV_DISP_INTF_DATA_WIDTH24;
++        custom.AspectRatioW = width; custom.AspectRatioH = height;
++        /* PC timings have AVI VIC 0; select the matching PHY bandwidth. */
++        wire_format = m->clock > 165000 ? HI_UNF_ENC_FMT_VESA_2560X1440_60_RB : HI_UNF_ENC_FMT_VESA_1024X768_60;
++        break;
++    default: break;
++    }
++}
++
++/* SiI transmitter enhanced DDC. Read each FIFO transaction in bounded chunks. */
++int mv100_sdk_edid(unsigned int block, unsigned char *buf, unsigned int len)
++{
++    unsigned int pos, i, attempt, status, count;
++    if (block > 255 || len > 128)
++        return -1;
++    for (pos = 0; pos < len; pos += count) {
++        count = len - pos > 16 ? 16 : len - pos;
++        WriteByteHDMITXP0(DDC_DELAY_CNT, 0x1a);
++        WriteByteHDMITXP0(DDC_DEV_ADDR, EDID_DEV_ADDR);
++        WriteByteHDMITXP0(0xee, block >> 1);
++        WriteByteHDMITXP0(DDC_OFFSET, (block & 1) * 128 + pos);
++        WriteByteHDMITXP0(DDC_COUNT1, count);
++        WriteByteHDMITXP0(DDC_COUNT2, 0);
++        WriteByteHDMITXP0(DDC_CMD, CLEAR_FIFO);
++        WriteByteHDMITXP0(DDC_CMD, block > 1 ? 4 : SEQ_NO_ACK);
++        for (attempt = 0; attempt < 25; ++attempt) {
++            status = ReadByteHDMITXP0(DDC_STATUS);
++            if (status & (NO_ACK | BUS_LOW))
++                return -1;
++            if (!(status & IN_PROG) && (ReadByteHDMITXP0(DDC_FIFOCNT) & 31) == count)
++                break;
++            udelay(1000);
++        }
++        if (attempt == 25)
++            return -1;
++        for (i = 0; i < count; ++i)
++            buf[pos + i] = ReadByteHDMITXP0(DDC_DATA);
++    }
++    return 0;
++}
++
+ void mv100_sdk_gfx_start(unsigned int address)
+ {
+     VDP_DISP_RECT_S rect;
+     memset(&rect, 0, sizeof(rect));
+-    rect.u32IWth = rect.u32OWth = rect.u32DXL = 1920;
+-    rect.u32IHgt = rect.u32OHgt = rect.u32DYL = 1080;
++    rect.u32IWth = rect.u32OWth = rect.u32DXL = width;
++    rect.u32IHgt = rect.u32OHgt = rect.u32DYL = height;
+     VDP_GFX_SetLayerEnable(0, HI_FALSE);
+     VDP_GFX_SetNoSecFlag(0, HI_TRUE);
+     VDP_GFX_SetDcmpEnable(0, HI_FALSE);
+     VDP_GFX_SetInDataFmt(0, VDP_GFX_IFMT_ARGB_8888);
+     /* MV100 G0 surface_stride is expressed in 16-byte units. */
+-    VDP_GFX_SetLayerAddr(0, address, 1920 * 4 / 16);
++    VDP_GFX_SetLayerAddr(0, address, pitch / 16);
+     VDP_GFX_SetLayerReso(0, rect);
+     VDP_GFX_SetReadMode(0, VDP_RMODE_PROGRESSIVE);
+     VDP_GFX_SetMuteEnable(0, HI_FALSE);
+@@ -31,7 +111,9 @@
+     VDP_GP_SetZmeFirEnable(0, VDP_ZME_MODE_ALL, HI_FALSE);
+     VDP_GP_SetZmeMidEnable(0, VDP_ZME_MODE_ALL, HI_FALSE);
+     VDP_GP_SetCscMode(0, VDP_CSC_RGB2YUV_709);
+-    VDP_GP_SetCscEnable(0, HI_TRUE);
++    /* PC scanout goes to an RGB transmitter; the TV path expects YCbCr. */
++    VDP_GP_SetCscEnable(0, !(wire_format >= HI_UNF_ENC_FMT_861D_640X480_60 &&
++                              wire_format <= HI_UNF_ENC_FMT_VESA_2560X1600_60_RB));
+     VDP_CBM_ResetMixerPrio(VDP_CBM_MIXG0);
+     VDP_CBM_SetMixerPrio(VDP_CBM_MIXG0, 0, 0);
+     VDP_CBM_ResetMixerPrio(VDP_CBM_MIX0);
+@@ -45,6 +127,14 @@
+ void mv100_sdk_gfx_dump(void)
+ {
+     extern volatile S_VOU_CV200_REGS_TYPE *pVdpReg;
++    printf("MV100 display PLL10=%08x PLL11=%08x CRG54=%08x TX=%02x\n",
++           g_pstRegCrg->PERI_CRG_PLL10.u32, g_pstRegCrg->PERI_CRG_PLL11.u32,
++           g_pstRegCrg->PERI_CRG54.u32, ReadByteHDMITXP0(TX_STAT_ADDR));
++    printf("HDMI registers active=%ux%u total=%ux%u G0=%08x stride=%u GP0=%08x\n",
++        pVdpReg->DHD0_HSYNC1.bits.hact+1, pVdpReg->DHD0_VSYNC.bits.vact+1,
++        pVdpReg->DHD0_HSYNC1.bits.hact+pVdpReg->DHD0_HSYNC1.bits.hbb+pVdpReg->DHD0_HSYNC2.bits.hfb+3,
++        pVdpReg->DHD0_VSYNC.bits.vact+pVdpReg->DHD0_VSYNC.bits.vbb+pVdpReg->DHD0_VSYNC.bits.vfb+3,
++        pVdpReg->G0_IRESO.u32, (pVdpReg->G0_STRIDE.u32 & 65535)*16, pVdpReg->GP0_IRESO.u32);
+     printf("G0 ctrl=%08x addr=%08x stride=%08x ireso=%08x alpha=%08x\n",
+         pVdpReg->G0_CTRL.u32, pVdpReg->G0_ADDR.u32, pVdpReg->G0_STRIDE.u32,
+         pVdpReg->G0_IRESO.u32, pVdpReg->G0_CBMPARA.u32);
+@@ -59,7 +149,7 @@
+     if (result)
+         return result;
+     udelay(100000);
+-    return HI_UNF_HDMI_Open(HI_UNF_HDMI_ID_0, HI_UNF_ENC_FMT_1080P_60);
++    return HI_UNF_HDMI_Open(HI_UNF_HDMI_ID_0, wire_format);
+ }
+ 
+ HI_VOID HI_DRV_SYS_GetChipVersion(HI_CHIP_TYPE_E *type, HI_CHIP_VERSION_E *version)
+@@ -74,12 +164,14 @@
+     if (!param || disp > HI_UNF_DISPLAY1)
+         return HI_FAILURE;
+     memset(param, 0, sizeof(*param));
+-    param->enFormat = disp == HI_UNF_DISPLAY1 ? HI_UNF_ENC_FMT_1080P_60 : HI_UNF_ENC_FMT_PAL;
++    param->enFormat = disp == HI_UNF_DISPLAY1 ? timing : HI_UNF_ENC_FMT_PAL;
++    if (disp == HI_UNF_DISPLAY1 && timing == HI_UNF_ENC_FMT_BUTT)
++        param->stDispTiming = custom;
+     param->enSrcDisp = HI_UNF_DISPLAY_BUTT;
+     param->u32Brightness = param->u32Contrast = 50;
+     param->u32Saturation = param->u32HuePlus = 50;
+-    param->u32VirtScreenWidth = 1920;
+-    param->u32VirtScreenHeight = 1080;
++    param->u32VirtScreenWidth = width;
++    param->u32VirtScreenHeight = height;
+     param->stAspectRatio.enDispAspectRatio = HI_UNF_DISP_ASPECT_RATIO_16TO9;
+     param->enPixelFormat = HI_GFX_PF_8888;
+     param->enVidOutMode = HI_UNF_HDMI_VIDEO_MODE_RGB444;
+--- /dev/null
++++ b/hi3798/display-init/modes.def
+@@ -0,0 +1,43 @@
++/* MV100 SDK HD timing generator and PLL presets, clocks in kHz. */
++ROW(1080P_60, 148500, 1920, 88, 44, 2200, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_50, 148500, 1920, 528, 44, 2640, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_30, 74250, 1920, 88, 44, 2200, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_25, 74250, 1920, 528, 44, 2640, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_24, 74250, 1920, 638, 44, 2750, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080i_60, 74250, 1920, 88, 44, 2200, 1080, 4, 10, 1125, 0, 0, 1)
++ROW(1080i_50, 74250, 1920, 528, 44, 2640, 1080, 4, 10, 1125, 0, 0, 1)
++ROW(720P_60, 74250, 1280, 110, 40, 1650, 720, 5, 5, 750, 0, 0, 0)
++ROW(720P_50, 74250, 1280, 440, 40, 1980, 720, 5, 5, 750, 0, 0, 0)
++ROW(861D_640X480_60, 25200, 640, 16, 96, 800, 480, 10, 2, 525, 1, 1, 0)
++ROW(VESA_800X600_60, 39792, 800, 40, 128, 1056, 600, 1, 4, 628, 0, 0, 0)
++ROW(VESA_1024X768_60, 64992, 1024, 24, 136, 1344, 768, 3, 6, 806, 0, 0, 0)
++ROW(VESA_1280X800_60, 83760, 1280, 72, 128, 1680, 800, 3, 6, 831, 0, 0, 0)
++ROW(VESA_1280X1024_60, 107952, 1280, 48, 112, 1688, 1024, 1, 3, 1066, 0, 0, 0)
++ROW(VESA_1360X768_60, 85480, 1360, 64, 112, 1792, 768, 3, 6, 795, 0, 0, 0)
++ROW(VESA_1366X768_60, 85800, 1366, 70, 143, 1792, 768, 3, 3, 798, 0, 0, 0)
++ROW(VESA_1400X1050_60, 121800, 1400, 88, 144, 1864, 1050, 3, 4, 1089, 0, 0, 0)
++ROW(VESA_1440X900_60, 106700, 1440, 80, 152, 1904, 900, 3, 6, 934, 0, 0, 0)
++ROW(VESA_1440X900_60_RB, 88750, 1440, 48, 32, 1600, 900, 3, 6, 926, 0, 0, 0)
++ROW(VESA_1600X900_60_RB, 97750, 1600, 48, 32, 1760, 900, 3, 5, 926, 0, 0, 0)
++ROW(VESA_1600X1200_60, 162000, 1600, 64, 192, 2160, 1200, 1, 3, 1250, 0, 0, 0)
++ROW(VESA_1680X1050_60, 146375, 1680, 104, 176, 2240, 1050, 3, 6, 1089, 0, 0, 0)
++ROW(VESA_1680X1050_60_RB, 146375, 1680, 104, 176, 2240, 1050, 3, 6, 1089, 0, 0, 0)
++ROW(VESA_1920X1080_60, 148500, 1920, 88, 44, 2200, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(VESA_1920X1200_60, 154000, 1920, 48, 32, 2080, 1200, 3, 6, 1235, 0, 0, 0)
++ROW(VESA_1920X1440_60, 234000, 1920, 128, 208, 2600, 1440, 1, 3, 1500, 0, 0, 0)
++ROW(VESA_2048X1152_60, 157000, 2048, 48, 32, 2208, 1152, 3, 5, 1185, 0, 0, 0)
++ROW(VESA_2560X1440_60_RB, 241500, 2560, 48, 32, 2720, 1440, 2, 5, 1481, 0, 0, 0)
++ROW(VESA_2560X1600_60_RB, 268500, 2560, 48, 32, 2720, 1600, 3, 6, 1646, 0, 0, 0)
++ROW(3840X2160_24, 297000, 3840, 1276, 88, 5500, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(3840X2160_25, 297000, 3840, 1056, 88, 5280, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(3840X2160_30, 297000, 3840, 176, 88, 4400, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(4096X2160_24, 297000, 4096, 1020, 88, 5500, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(3840X2160_23_976, 296703, 3840, 1276, 88, 5500, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(3840X2160_29_97, 296703, 3840, 176, 88, 4400, 2160, 8, 10, 2250, 0, 0, 0)
++ROW(720P_59_94, 74176, 1280, 110, 40, 1650, 720, 5, 5, 750, 0, 0, 0)
++ROW(1080P_59_94, 148351, 1920, 88, 44, 2200, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_29_97, 74176, 1920, 88, 44, 2200, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080P_23_976, 74176, 1920, 638, 44, 2750, 1080, 4, 5, 1125, 0, 0, 0)
++ROW(1080i_59_94, 74176, 1920, 88, 44, 2200, 1080, 4, 10, 1125, 0, 0, 1)
++ROW(576P_50, 27000, 720, 12, 64, 864, 576, 5, 5, 625, 1, 1, 0)
++ROW(480P_60, 27000, 720, 16, 62, 858, 480, 9, 6, 525, 1, 1, 0)
+--- /dev/null
++++ b/hi3798/display-init/wire.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef MV100_WIRE_H
++#define MV100_WIRE_H
++struct mv100_wire {
++    unsigned int w, h, hfp, hbb, hpw, vfp, vbb, vpw, clock, millihz, neg_h, neg_v;
++};
++#ifdef __KERNEL__
++#if IS_BUILTIN(CONFIG_HI3798MV100_DISPLAY_INIT)
++bool mv100_display_connected(void);
++int mv100_display_edid(void *ctx, u8 *buf, unsigned int block, size_t len);
++int mv100_display_set(int index, const struct mv100_wire *wire);
++#endif
++#endif
++#endif
+--- a/hi3798/verify-dtb.py
++++ b/hi3798/verify-dtb.py
+@@ -116,9 +116,9 @@
+ display_path = out / 'arch/arm/boot/dts/hisilicon/hi3798mv100-codex-display.dtb'
+ if display_path.exists():
+     display_tree = fdt(display_path)
+-    fb = display_tree['/chosen/framebuffer@3e000000']
+-    reserved = display_tree['/reserved-memory/framebuffer@3e000000']
+-    assert cells(fb['reg']) == cells(reserved['reg']) == [0x3e000000, 0x800000]
++    fb = display_tree['/chosen/framebuffer@3a000000']
++    reserved = display_tree['/reserved-memory/framebuffer@3a000000']
++    assert cells(fb['reg']) == cells(reserved['reg']) == [0x3a000000, 0x2400000]
+     assert 'no-map' in reserved
+     assert cells(fb['width']) == [1920] and cells(fb['height']) == [1080]
+     assert cells(fb['stride']) == [7680]

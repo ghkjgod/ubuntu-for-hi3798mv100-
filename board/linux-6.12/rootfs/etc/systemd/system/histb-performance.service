@@ -1,0 +1,13 @@
+[Unit]
+Description=Hi3798 CPU and Mali performance policy
+ConditionKernelVersion=6.12.114-hi3798-*
+ConditionPathExists=/sys/class/devfreq/f9200000.gpu
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/histb-performance apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

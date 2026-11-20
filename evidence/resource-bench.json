@@ -1,0 +1,378 @@
+{
+  "x11_qhd": [
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 722.8,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 0.0,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "before-1",
+      "x11_median_ms": 14.159,
+      "x11_p95_ms": 14.299,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 717.7,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 0.6,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "before-2",
+      "x11_median_ms": 14.1,
+      "x11_p95_ms": 14.169,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 718.1,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 0.1,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "before-3",
+      "x11_median_ms": 14.173,
+      "x11_p95_ms": 14.243,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 704.4,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 0.2,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "balanced-1",
+      "x11_median_ms": 14.13,
+      "x11_p95_ms": 15.22,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 698.6,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 0.1,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "balanced-2",
+      "x11_median_ms": 14.552,
+      "x11_p95_ms": 15.206,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 702.2,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 0.1,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "balanced-3",
+      "x11_median_ms": 14.076,
+      "x11_p95_ms": 15.205,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 740.2,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 0.5,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "final-balanced-1",
+      "process_PSS_MiB": 211.6,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.2,
+        "Xorg": 26.3,
+        "fcitx": 15.4,
+        "nm-applet": 8.4,
+        "panel-6-systray": 7.6,
+        "python3": 7.3,
+        "systemd": 5.9,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 13.095,
+      "x11_p95_ms": 13.146,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 738.9,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 0.3,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "final-balanced-2",
+      "process_PSS_MiB": 212.0,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.2,
+        "Xorg": 26.6,
+        "fcitx": 15.4,
+        "nm-applet": 8.4,
+        "panel-6-systray": 7.6,
+        "python3": 7.3,
+        "systemd": 5.9,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 13.09,
+      "x11_p95_ms": 13.898,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "schedutil",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 740.1,
+      "idle_cpu_kHz_median": 400000.0,
+      "idle_cpu_percent": 2.4,
+      "idle_gpu_Hz_median": 200000000.0,
+      "label": "final-balanced-3",
+      "process_PSS_MiB": 212.0,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.2,
+        "Xorg": 26.6,
+        "fcitx": 15.4,
+        "nm-applet": 8.4,
+        "panel-6-systray": 7.6,
+        "python3": 7.3,
+        "systemd": 5.9,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 13.101,
+      "x11_p95_ms": 13.94,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 740.0,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 1.2,
+      "idle_gpu_Hz_median": 400000000.0,
+      "label": "final-full-1",
+      "process_PSS_MiB": 212.0,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.2,
+        "Xorg": 26.6,
+        "fcitx": 15.4,
+        "nm-applet": 8.4,
+        "panel-6-systray": 7.6,
+        "python3": 7.3,
+        "systemd": 5.9,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 11.76,
+      "x11_p95_ms": 11.808,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 736.5,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 11.8,
+      "idle_gpu_Hz_median": 400000000.0,
+      "label": "final-full-2",
+      "process_PSS_MiB": 217.8,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.0,
+        "Xorg": 26.5,
+        "fcitx": 15.4,
+        "nm-applet": 7.9,
+        "panel-6-systray": 7.6,
+        "python3": 11.2,
+        "systemd": 5.8,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 11.866,
+      "x11_p95_ms": 13.599,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    },
+    {
+      "cpu_governor": "performance",
+      "gpu_governor": "simple_ondemand",
+      "idle_MemAvailable_MiB": 737.2,
+      "idle_cpu_kHz_median": 1000000.0,
+      "idle_cpu_percent": 1.3,
+      "idle_gpu_Hz_median": 400000000.0,
+      "label": "final-full-3",
+      "process_PSS_MiB": 212.1,
+      "top_PSS_MiB": {
+        "NetworkManager": 7.2,
+        "Xorg": 26.6,
+        "fcitx": 15.4,
+        "nm-applet": 8.4,
+        "panel-6-systray": 7.6,
+        "python3": 7.3,
+        "systemd": 5.9,
+        "systemd-journal": 6.9,
+        "xfce4-panel": 9.1,
+        "xfce4-session": 46.3,
+        "xfdesktop": 22.7,
+        "xfwm4": 7.4
+      },
+      "x11_median_ms": 11.709,
+      "x11_p95_ms": 12.097,
+      "x11_pixel_errors": 0,
+      "x11_readback_samples": 120
+    }
+  ],
+  "simultaneous_load": [
+    {
+      "label": "baseline",
+      "cpu_busy_percent": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "cpu_kHz": [
+        1000000
+      ],
+      "gpu_Hz": [
+        200000000,
+        400000000
+      ],
+      "samples": 58,
+      "gpu_busy_percent": 96.7,
+      "gpu_samples": 245,
+      "sha256_MiB_per_sec": [
+        31.27,
+        31.02,
+        31.5,
+        31.43
+      ],
+      "render": "renderer=Mali450 frames=528 seconds=15.012 offscreen_fps=35.17 pixel=92,105,64,255"
+    },
+    {
+      "label": "balanced",
+      "cpu_busy_percent": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "cpu_kHz": [
+        1000000
+      ],
+      "gpu_Hz": [
+        400000000
+      ],
+      "samples": 56,
+      "gpu_busy_percent": 96.6,
+      "gpu_samples": 243,
+      "sha256_MiB_per_sec": [
+        32.13,
+        32.87,
+        32.63,
+        32.64
+      ],
+      "render": "renderer=Mali450 frames=535 seconds=15.019 offscreen_fps=35.62 pixel=187,107,64,255"
+    },
+    {
+      "label": "full",
+      "cpu_busy_percent": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "cpu_kHz": [
+        1000000
+      ],
+      "gpu_Hz": [
+        400000000
+      ],
+      "samples": 59,
+      "gpu_busy_percent": 96.9,
+      "gpu_samples": 242,
+      "sha256_MiB_per_sec": [
+        32.29,
+        32.74,
+        32.69,
+        32.71
+      ],
+      "render": "renderer=Mali450 frames=536 seconds=15.017 offscreen_fps=35.69 pixel=202,127,64,255"
+    },
+    {
+      "label": "final-balanced",
+      "cpu_busy_percent": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "cpu_kHz": [
+        1000000
+      ],
+      "gpu_Hz": [
+        400000000
+      ],
+      "samples": 56,
+      "gpu_busy_percent": 96.4,
+      "gpu_samples": 243,
+      "sha256_MiB_per_sec": [
+        30.89,
+        31.91,
+        31.88,
+        31.97
+      ],
+      "render": "renderer=Mali450 frames=532 seconds=15.013 offscreen_fps=35.44 pixel=123,22,64,255"
+    },
+    {
+      "label": "final-full",
+      "cpu_busy_percent": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "cpu_kHz": [
+        1000000
+      ],
+      "gpu_Hz": [
+        400000000
+      ],
+      "samples": 56,
+      "gpu_busy_percent": 96.4,
+      "gpu_samples": 241,
+      "sha256_MiB_per_sec": [
+        31.77,
+        32.43,
+        32.58,
+        32.21
+      ],
+      "render": "renderer=Mali450 frames=533 seconds=15.013 offscreen_fps=35.50 pixel=145,52,64,255"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+device=/dev/zram0
+control=/sys/block/zram0
+test -b "$device" && test -r "$control/disksize" || exit 0
+# Respect a swap device already configured by the administrator.
+if grep -q "^$device " /proc/swaps; then exit 0; fi
+if [ "$(cat "$control/disksize")" != 0 ]; then exit 0; fi
+printf 'lz4\n' >"$control/comp_algorithm"
+# Logical capacity only. zram allocates physical memory as pages are swapped.
+kib=$(awk '$1 == "MemTotal:" {print int($2/4)}' /proc/meminfo)
+printf '%s\n' "$((kib * 1024))" >"$control/disksize"
+if mkswap "$device" >/dev/null && swapon --priority 100 "$device"; then
+    sysctl -q -w vm.page-cluster=0 vm.swappiness=100
+else
+    echo 1 >"$control/reset"
+    exit 1
+fi

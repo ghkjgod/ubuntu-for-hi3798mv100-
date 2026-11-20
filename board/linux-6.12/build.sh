@@ -20,6 +20,9 @@ check() { printf '%s  %s\n' "$1" "$2" | sha256sum -c -; }
 check 92902f383c90d16f8b8ef472de69f2ee7b0c462ff754828f66183d7bb3da3109 "$archive"
 tar -xf "$archive" -C source --strip-components=1
 patch -s -d source -p1 <"$here/board.patch"
+patch -s -d source -p1 <"$here/display-modes.patch"
+patch -s -d source -p1 <"$here/irq-timing.patch"
+patch -s -d source -p1 <"$here/pcm-drain.patch"
 if test -f "${INPUT_CACHE:-/nonexistent}/upstream-v6.12.114-crg.c"; then
     cp "$INPUT_CACHE/upstream-v6.12.114-crg.c" .
 else
@@ -50,9 +53,18 @@ install -m644 rtl8188fufw.bin "$root/usr/lib/firmware/rtlwifi/"
 install -m644 LICENCE.rtlwifi_firmware.txt "$root/usr/share/doc/histb-lima/"
 sh source/hi3798/display-init/rootfs/build-kmsro-select.sh "$root/usr/local/lib/histb-lima"
 "${CROSS_COMPILE}gcc" -O2 source/hi3798/display-init/lima-render-image.c -ldl -o "$root/usr/local/bin/histb-lima-test"
+install -m755 "$here/../../overlay/usr/local/bin/start-histb-session" "$here/../../overlay/usr/local/bin/histb-chromium" "$root/usr/local/bin/"
 chmod 755 "$root"/usr/local/bin/histb-*
 release=$(cat out/include/config/kernel.release)
 mkdir -p "$root/usr/lib/modules/$release"
 install -m644 out/modules.{builtin,builtin.modinfo,order} "$root/usr/lib/modules/$release/"
-install -m755 "$here/check-desktop.sh" package/
+install -m755 "$here/check-desktop.sh" "$here/activate.sh" package/
+chmod 755 "$root/usr/local/sbin/histb-zram" "$root/usr/local/sbin/histb-wifi-stop"
+chmod 644 "$root"/etc/systemd/system/histb-*.service "$root"/etc/xdg/autostart/histb-*.desktop
+wants="$root/etc/systemd/system/multi-user.target.wants"
+mkdir -p "$wants"
+for unit in histb-performance histb-zram histb-wifi-shutdown; do
+    ln -s "../$unit.service" "$wants/$unit.service"
+done
+bash "$here/mesa/build.sh" "$work/mesa" "$root"
 sh "$here/package.sh" "$work/package"

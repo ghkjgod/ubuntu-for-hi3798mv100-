@@ -1,5 +1,5 @@
 #!/bin/sh
 case "$(uname -r)" in
-  6.12.114-hi3798-*) exec env MESA_LOADER_DRIVER_OVERRIDE=pl111 MV100_KMSRO_LIMA_ONLY=1 LD_PRELOAD=/usr/local/lib/histb-lima/libkmsro-lima-select.so /usr/lib/xorg/Xorg -config /usr/local/share/histb-lima/xorg.conf -layout "Lima layout" "$@" ;;
+  6.12.114-hi3798-*) exec /usr/local/bin/histb-lima-run /usr/lib/xorg/Xorg -config /usr/local/share/histb-lima/xorg.conf -layout "Lima layout" "$@" ;;
   *) exec /usr/lib/xorg/Xorg "$@" ;;
 esac

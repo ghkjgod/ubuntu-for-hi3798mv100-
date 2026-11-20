@@ -1,0 +1,28 @@
+2026-11-20 cold power-on, default boot with no serial intervention
+
+MMC read: dev # 0, block # 28672, count 40960 ... 40960 blocks read: OK
+## Booting kernel from Legacy Image at 01ffffc0 ...
+Data Size:    5955226 Bytes = 5.7 MiB
+Verifying Checksum ... OK
+[    0.000000] Linux version 6.12.114-hi3798-mv100-exp (ray@hi3798-linux) (arm-linux-gnueabihf-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #1 SMP 2026-10-27 00:00:00 +0000
+[  OK  ] Started ssh.service - OpenBSD Secure Shell server.
+[  OK  ] Reached target graphical.target - Graphical Interface.
+Ubuntu 24.04.5 LTS hi3798-desktop ttyAMA0
+
+Authenticated SSH checks after dedicated wired DHCP ACK
+/dev/mmcblk0p9[/noble-system] ext4
+[    14.741] (II) modeset(0): glamor X acceleration enabled on Mali450
+Screen 0: minimum 320 x 200, current 1920 x 1080, maximum 4096 x 4096
+HDMI-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+GL_RENDERER: Mali450
+GL_RENDERER: Mali450
+EGL 1.5; GL_RENDERER=Mali450
+GPU single-frame pixel=128,128,64,255 error=0
+/srv/tf /dev/mmcblk1p1 ext4   rw,nosuid,nodev,noatime
+SU08G
+N: Name="Logitech Wireless Receiver Mouse"
+eth0:ethernet:connected
+wlan0:wifi:disconnected
+
+100 Mbps full duplex; SSH TCP/22; /sys/devices/system/cpu/online = 0-3
+Kernel uImage SHA256 7d5cf2b4d78af6dca412df63c44442c630ed1a32cb1ef3e3713870acdadbea06

@@ -1,0 +1,14 @@
+--- a/src/gallium/drivers/lima/lima_job.c
++++ b/src/gallium/drivers/lima/lima_job.c
+@@ -697,7 +697,10 @@
+    struct lima_context *ctx = job->ctx;
+    struct lima_screen *screen = lima_screen(ctx->base.screen);
+    struct lima_damage_region *damage = lima_job_get_damage(job);
+-   if ((screen->gpu_type == DRM_LIMA_PARAM_GPU_ID_MALI400) ||
++   /* On the MV100 Mali450 MP2, full-width DLBU jobs can drop draws on
++    * cinema-width targets. Use the existing per-PP tile lists there. */
++   if (job->fb.width > 3840 ||
++       (screen->gpu_type == DRM_LIMA_PARAM_GPU_ID_MALI400) ||
+        (damage && damage->region) || !lima_damage_fullscreen(job))
+       lima_update_damage_pp_stream(job);
+    else

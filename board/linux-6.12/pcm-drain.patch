@@ -1,0 +1,49 @@
+--- a/sound/arm/hi3798mv100-hdmi-pcm.c
++++ b/sound/arm/hi3798mv100-hdmi-pcm.c
+@@ -84,6 +84,34 @@
+ 	.period_bytes_max = 8192, .periods_min = 2, .periods_max = 64,
+ };
+ 
++/* The TX DMA engine consumes complete bursts. When the final user write
++ * ends inside one, zero-pad unused ring space and wait for the hardware
++ * read pointer to reach that boundary before waking a blocking drain.
++ * ALSA serializes state transitions and application pointer updates. */
++static void mv100_finish_drain(struct mv100_pcm *p, struct snd_pcm_substream *s,
++                               u32 pos, u32 size)
++{
++	unsigned long flags;
++	u32 wp, tail, padded;
++
++	snd_pcm_stream_lock_irqsave(s, flags);
++	if (s->runtime->state != SNDRV_PCM_STATE_DRAINING ||
++	    READ_ONCE(p->full_pending))
++		goto out;
++	wp = readl(p->aiao + TX_WPTR);
++	tail = (wp + size - pos) % size;
++	if (!tail) {
++		snd_pcm_drain_done(s);
++	} else if (tail < 128 && !IS_ALIGNED(wp, 128)) {
++		padded = ALIGN(wp, 128);
++		memset(s->runtime->dma_area + wp, 0, padded - wp);
++		dma_wmb();
++		writel(padded % size, p->aiao + TX_WPTR);
++	}
++out:
++	snd_pcm_stream_unlock_irqrestore(s, flags);
++}
++
+ static enum hrtimer_restart mv100_tick(struct hrtimer *timer)
+ {
+ 	struct mv100_pcm *p = container_of(timer, struct mv100_pcm, timer);
+@@ -105,6 +133,11 @@
+ 	delta = (pos + size - p->last_pos) % size;
+ 	p->last_pos = pos;
+ 	p->period_acc += delta;
++	if (READ_ONCE(s->runtime->state) == SNDRV_PCM_STATE_DRAINING) {
++		mv100_finish_drain(p, s, pos, size);
++		if (!READ_ONCE(p->running))
++			return HRTIMER_NORESTART;
++	}
+ 	while (p->period_acc >= period) {
+ 		p->period_acc -= period;
+ 		snd_pcm_period_elapsed(s);

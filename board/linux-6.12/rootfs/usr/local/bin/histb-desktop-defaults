@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+case "$(uname -r)" in 6.12.114-hi3798-*) ;; *) exit 0 ;; esac
+state=${XDG_STATE_HOME:-$HOME/.local/state}/histb-desktop
+test ! -e "$state/backdrop-v1" || exit 0
+# Only change the packaged Xfce wallpaper on this board's HDMI connector.
+# The user can select another image or restore the original in Desktop Settings.
+channel=xfce4-desktop
+base=/backdrop/screen0/monitorHDMI-1
+for workspace in 0 1 2 3; do
+    node=$base/workspace$workspace
+    image=$(xfconf-query -c "$channel" -p "$node/last-image" 2>/dev/null || true)
+    style=$(xfconf-query -c "$channel" -p "$node/image-style" 2>/dev/null || true)
+    case "$image" in ''|/usr/share/backgrounds/xfce/xfce-shapes.svg) ;; *) continue ;; esac
+    case "$style" in
+        '') xfconf-query -c "$channel" -p "$node/image-style" -n -t int -s 0 ;;
+        5) xfconf-query -c "$channel" -p "$node/image-style" -s 0 ;;
+    esac
+done
+mkdir -p "$state"
+touch "$state/backdrop-v1"

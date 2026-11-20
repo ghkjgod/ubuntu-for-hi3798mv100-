@@ -67,7 +67,8 @@ chroot "$root" depmod -a "$kernel"
 ln -s /srv/tf/desktop "$root/root/TF"
 ln -sfn /usr/share/zoneinfo/Asia/Shanghai "$root/etc/localtime"
 printf 'Asia/Shanghai\n' > "$root/etc/timezone"
-chroot "$root" systemctl enable systemd-networkd systemd-resolved systemd-timesyncd NetworkManager bluetooth lightdm hifb-plane histb-monitor.service histb-monitor.timer
+chroot "$root" systemctl disable systemd-networkd-wait-online.service systemd-networkd.socket systemd-networkd.service
+chroot "$root" systemctl enable systemd-resolved systemd-timesyncd NetworkManager bluetooth lightdm hifb-plane histb-monitor.service histb-monitor.timer
 chroot "$root" systemctl set-default graphical.target
 chroot "$root" apt-get check
 chroot "$root" dpkg --audit > "$out/dpkg-audit.txt"

@@ -1,9 +1,23 @@
 #!/bin/sh
-export XMODIFIERS=@im=ibus GTK_IM_MODULE=ibus QT_IM_MODULE=ibus
+if command -v fcitx >/dev/null; then
+    im=fcitx
+else
+    im=ibus
+fi
+export XMODIFIERS=@im=$im GTK_IM_MODULE=$im QT_IM_MODULE=$im
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
     exec dbus-run-session -- "$0"
 fi
 xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
-gsettings set org.freedesktop.ibus.general preload-engines "['xkb:us::eng','libpinyin']"
-ibus-daemon --daemonize --xim
+if [ "$im" = fcitx ]; then
+    config=${XDG_CONFIG_HOME:-$HOME/.config}/fcitx
+    if [ ! -e "$config/profile" ]; then
+        mkdir -p "$config"
+        printf '%s\n' '[Profile]' 'IMName=googlepinyin' 'EnabledIMList=fcitx-keyboard-us:True,googlepinyin:True' >"$config/profile"
+    fi
+    fcitx -d -u fcitx-classic-ui
+else
+    gsettings set org.freedesktop.ibus.general preload-engines "['xkb:us::eng','libpinyin']"
+    ibus-daemon --daemonize --xim
+fi
 exec startxfce4

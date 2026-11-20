@@ -2,9 +2,13 @@
 
 上电从 eMMC p9 进入 Ubuntu 24.04.5 LTS armhf。系统、root 主目录和浏览器配置保存在 eMMC。8 GB TF 的单个 ext4 分区挂载在 `/srv/tf`，桌面可通过 `~/TF` 访问。Ubuntu 的启动选择独立于 TF 是否插入。
 
-实测盒子的默认内核为 Linux 6.12.114，Xorg 使用 Mesa Lima 驱动 Mali450 加速。HDMI 输出为 1920×1080、60 Hz。原厂 4.4 内核可从台架恢复，使用海思 HIFB。内核升级包和基础 Ubuntu 根文件系统分别交付。[升级、检测和回退说明](board/linux-6.12/README.md)
+实测盒子的默认内核为 Linux 6.12.114，Xorg 使用 Mesa Lima 驱动 Mali450 加速。HDMI 按显示器 EDID 选择模式，桌面以所选分辨率原生扫描输出，支持 2560×1440 和 3840×2160 等时序。原厂 4.4 内核可从台架恢复，使用海思 HIFB。内核升级包和基础 Ubuntu 根文件系统分别交付。[升级、检测和回退说明](board/linux-6.12/README.md)
 
-LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。基础根文件系统提供 IBus 智能拼音，Super+Space 切换输入法。Chromium 使用独立的普通用户运行，另装有 NetSurf。NetworkManager 管理 Wi-Fi 和有线网口。接入提供 DHCP 的路由器后，按主机名 `hi3798-desktop` 查找 IPv4 地址。[真机验收与 HDMI 采集帧](HARDWARE.md)
+LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构建使用 Fcitx 4 与 Google 拼音，Ctrl+Space 切换。已发布的基础根文件系统附带 IBus 智能拼音，升级步骤给出所需的 Fcitx 软件包。Chromium 使用独立的普通用户运行，另装有 NetSurf。NetworkManager 管理 Wi-Fi 和有线网口。接入提供 DHCP 的路由器后，按主机名 `hi3798-desktop` 查找 IPv4 地址。[真机验收与 HDMI 采集帧](HARDWARE.md)
+
+## 性能模式
+
+默认 `balanced` 让 CPU 空闲时降至 400 MHz，重负载时允许四核各自达到 1 GHz，GPU 在驱动支持的 200–400 MHz 间调节。要在交互或渲染前直接使用最高频率，运行 `histb-performance full`。用 `histb-performance balanced` 切回，`histb-performance status` 查看当前策略。选择会在重启后保留。两种模式都允许 GPU 空闲挂起。压缩交换空间按内存的四分之一设置，按写入量占用物理 RAM。[负载、响应时间和硬件限制](HARDWARE.md)
 
 ## 无屏 SSH 登录
 
@@ -101,7 +105,26 @@ sudo env HISTB_SDK=/path/to/built/sdk bash build-rootfs.sh /path/to/ext4/work /p
 
 构建脚本使用 Ubuntu keyring 核验官方 Ubuntu Base 24.04.5 armhf 的签名及 SHA-256。软件包来自清华 Ubuntu Ports 的 noble、noble-updates 和 noble-security。Chromium 及其运行库单独从清华的 Debian bookworm 和 bookworm-security 获取并验证 Debian 签名，保存在 `/opt/histb-chromium`。启动器用普通用户 desktop 运行 Chromium。两个发行版使用各自的软件包数据库。安全更新会影响重新构建时可获得的版本。[Ubuntu Base](https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/) · [清华 Ubuntu Ports](https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu-ports/) · [Debian armhf Chromium](https://packages.debian.org/bookworm/armhf/chromium)
 
-## 显示
+## Linux 6.12 的 HDMI 输出
+
+在 Xfce 的“显示”面板中选择分辨率和刷新率，也可以在本地终端运行以下命令。星号表示当前时序，加号表示首选时序。HDMI 接收端没有有效 EDID 时，默认选择 1080p60。支持的模式、像素时钟和物理采集结果见[真机记录](HARDWARE.md)。
+
+```sh
+xrandr --current
+xrandr --output HDMI-1 --auto
+# 以下模式出现在当前显示器的列表时可以手选
+xrandr --output HDMI-1 --mode 3840x2160 --rate 30
+```
+
+已验证 4K 超高清 30 Hz、DCI 4K 24/30 Hz、超宽 3440×1440 50 Hz 和 1080p 120 Hz。验证自定义模式时，在已知接收端能够接受该时序的条件下，可以用 XRandR 临时添加。例如下列 DCI 4K 30 Hz 参数来自 CTA VIC 100，像素时钟 297 MHz。重新启动 Xorg 即清除手工添加的模式。
+
+```sh
+xrandr --newmode DCI4K30 297 4096 4184 4272 4400 2160 2168 2178 2250 +hsync +vsync
+xrandr --addmode HDMI-1 DCI4K30
+xrandr --output HDMI-1 --mode DCI4K30
+```
+
+## 原厂 4.4 内核的显示设置
 
 启动和热插拔后读取 HDMI 接收端 EDID。优先匹配已验证的 2560×1440 reduced-blanking 时序；优先时序为 1080p 的设备保留 1080p。遇到无效 EDID，默认输出 1080p60。本机 BSP 的 HIFB 图层宽度上限为 1920。发射 1440p 时，显示控制器把完整的 1920×1080 桌面缩放至整个 HDMI 画面。实际刷新率以 HDMI 时序和接收端的输入信息为准。
 
