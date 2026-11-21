@@ -41,3 +41,5 @@ Ubuntu 24.04.5 armhf 从 eMMC p9 启动，内核 `6.12.114-hi3798-mv100-exp`。�
 通过 SSH 安装、卸载，再次安装。卸载后模块及开机自载配置消失，SSH 仍为 active。正常重启后使用原主机公钥重新登录，有线 IPv4 配置为 auto，SSH、NetworkManager、显示管理器均为 active。设备由 udev 创建，属组 video、权限 0660。正式模块两次在独立目录重建所得 SHA-256 均为 `0d1e722b2146d9bcbe36a92469a36883a9e03961da7abbcaf0333ff41156ab43`；文件约 28 KiB。[自检与卸载步骤](../board/vdh/README.md)
 
 验收结束通过 SSH 正常关机，COM6 记录内核已停机。继电器随后回读 GPIO25=0，控制器最终状态 STOPPED_SAFE。
+
+随后加入了 Chromium 使用的 stateful H.264 节点并完成网页视频复测。[新版结果](chromium-vdh.md)

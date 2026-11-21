@@ -54,6 +54,6 @@ bash verify.sh 1920x1080
 cat /sys/devices/platform/mv100-vdh/{decoded_frames,rejected_frames}
 ```
 
-Chromium 的 GPU 页面绘制走 Lima。Debian Chromium 150 及单独试验的 Raspberry Pi OS Chromium 156 在同一段 H.264 上都选择了内置 `FFmpegVideoDecoder`，VDH 帧数没有增长。浏览器升级后，播放时在 `chrome://media-internals` 查看实际解码器并核对上述计数。[真机结果](../../evidence/vdh-6.12.114.md)
+桌面 Chromium 156 可通过本模块的 stateful H.264 节点解码网页视频。本地 GStreamer 继续通过另一个 Request API 节点使用 H.264 和 HEVC。已有 6.12 系统需另装浏览器更新。[Chromium 安装与回退](chromium/README.md) · [网页播放器验收](../../evidence/chromium-vdh.md)
 
 硬件消息布局参考 MV100 对应的 VFMW 配置，同系列其他 SoC 的解码器资料作为对照。模块只在匹配 MV100 设备树的机器上注册；参考图像和消息缓冲按流分配，结束播放时释放。[MV100 SDK](https://github.com/glinuz/hi3798mv100/tree/master/HiSTBLinuxV100R005C00SPC041B020/source/msp/drv/vfmw/vfmw_v4.0) · [HiVXE 驱动说明](https://github.com/HiSilicon-Development/HiVXE-2.0)

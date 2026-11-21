@@ -226,6 +226,7 @@ static int allocate_stream(struct vdh_hw *hw)
 		if (!s->coherent)
 			dma_sync_single_for_device(dev, s->dma, hw->layout.recon_size, DMA_BIDIRECTIONAL);
 	}
+	dev_dbg(hw->dev, "stream arena %u recon %u coherent %d/%d\n", hw->layout.arena_size, hw->layout.recon_size, hw->surfaces[0].coherent, hw->surfaces[1].coherent);
 	memset(hw->mem, 0, hw->layout.arena_size);
 	memcpy(hw->mem + CABAC, hw->h264_cabac, sizeof(hw->h264_cabac));
 	memcpy(hw->mem + CABAC + 8192, hw->hevc_cabac, sizeof(hw->hevc_cabac));
@@ -254,6 +255,7 @@ void vdh_stop_stream(struct vdh_hw *hw)
 }
 static void copy_capture(u8 *dest, const u8 *src, u32 w, u32 h, u32 uv)
 {
+	u32 chroma[256 / sizeof(u32)];
 	unsigned int y, x;
 	u32 stride = ALIGN(w, 64);
 	/* The last 256-byte tile has its own, possibly shorter, line pitch. */
@@ -271,10 +273,12 @@ static void copy_capture(u8 *dest, const u8 *src, u32 w, u32 h, u32 uv)
 			u32 pitch = min(256u, stride - x);
 			u32 off = (y / 8) * stride * 8 + x * 8 + (y % 8) * pitch;
 			u32 i, count = min(256u, w - x);
-			for (i = 0; i < count; i += 2) {
-				dest[y*w+x+i] = src[off+i+1];
-				dest[y*w+x+i+1] = src[off+i];
-			}
+			u32 *out = (u32 *)(dest + y * w + x);
+			/* Burst-read the tile before swapping NV21 chroma. Byte reads
+			 * from the coherent fallback mapping serialize on this CPU. */
+			memcpy(chroma, src + off, count);
+			for (i = 0; i < count / sizeof(*out); i++)
+				out[i] = swahb32(chroma[i]);
 		}
 	}
 }

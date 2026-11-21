@@ -1,6 +1,10 @@
 # EC6108V9C 真机验收
 
-## 2026-11-21 · Chromium 的 Mali450 加速与视频播放
+## 2026-11-21 · Chromium 网页视频硬解
+
+安装新的 VDH 模块和 Chromium 156 后，网页 H.264 播放已经调用海思解码器。复验覆盖直接打开的 HTML 视频和 MSE 分段输入，逐项记录了硬件计数、浏览器解码器和掉帧。[网页视频验收](evidence/chromium-vdh.md)
+
+## 2026-11-21 · Chromium 150 的 Mali450 加速与视频播放基线
 
 EC6108V9C 从 eMMC 启动 Linux 6.12.114，Ubuntu 桌面的默认浏览器为 Debian armhf Chromium 150.0.7871.181。上一版浏览器启动器固定传入 `--disable-gpu`。移除它后，还需在独立运行环境补齐 EGL/GLES、授予 Lima 渲染节点权限，并选择适配 OpenGL ES 2.0 的 ANGLE 后端。保留 ANGLE 着色器转换后，Skia 绘制的页面文字和纹理通过像素验证。[Chromium 图形开关源码](https://chromium.googlesource.com/chromium/src/+/refs/tags/150.0.7871.181/ui/gl/gl_features.cc) · [Mesa Lima 支持的 API](https://docs.mesa3d.org/drivers/lima.html)
 

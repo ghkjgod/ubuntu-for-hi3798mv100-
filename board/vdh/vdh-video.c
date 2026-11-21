@@ -12,6 +12,7 @@
 #include <media/v4l2-mem2mem.h>
 #include <media/videobuf2-vmalloc.h>
 #include "vdh.h"
+#include "vdh-avc.h"
 
 #define NAME "mv100-vdh"
 struct context {
@@ -20,13 +21,16 @@ struct context {
 	struct v4l2_ctrl *sps, *pps, *decode;
 	struct vdh_stream stream;
 	struct work_struct work;
+	struct mv100_avc *avc, *check;
+	u32 input_size;
+	bool announced;
 	u32 width, height, sequence, codec;
 	struct v4l2_ctrl *hsps, *hpps, *hsl, *hdec;
 };
 static struct {
 	struct platform_device *pdev;
 	struct v4l2_device v4l2;
-	struct video_device video;
+	struct video_device video, web;
 	struct media_device media;
 	struct v4l2_m2m_dev *m2m;
 	struct mutex mutex;
@@ -59,8 +63,30 @@ static int querycap(struct file *file, void *fh, struct v4l2_capability *c)
 	strscpy(c->bus_info, "platform:" NAME, sizeof(c->bus_info));
 	return 0;
 }
+static bool web_node(struct file *file)
+{
+	return video_devdata(file) == &vdh.web;
+}
+static u32 capture_bytes(struct context *c)
+{
+	return c->width * c->height * 3 / 2;
+}
+static int subscribe(struct v4l2_fh *fh, const struct v4l2_event_subscription *sub)
+{
+	if (fh->vdev == &vdh.web && sub->type == V4L2_EVENT_SOURCE_CHANGE)
+		return v4l2_src_change_event_subscribe(fh, sub);
+	return v4l2_ctrl_subscribe_event(fh, sub);
+}
 static int enum_fmt(struct file *file, void *fh, struct v4l2_fmtdesc *f)
 {
+	if (web_node(file)) {
+		bool out = V4L2_TYPE_IS_OUTPUT(f->type);
+		if (f->index)
+			return -EINVAL;
+		f->pixelformat = out ? V4L2_PIX_FMT_H264 : V4L2_PIX_FMT_NV12;
+		if (out) f->flags = V4L2_FMT_FLAG_COMPRESSED | V4L2_FMT_FLAG_DYN_RESOLUTION;
+		return 0;
+	}
 	if (f->index > (V4L2_TYPE_IS_OUTPUT(f->type) && vdh.hw.hevc_ready ? 1 : 0))
 		return -EINVAL;
 	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
@@ -88,12 +114,21 @@ static int get_fmt(struct file *file, void *fh, struct v4l2_format *f)
 {
 	struct context *c = context(fh);
 	fill_fmt(f, c->width, c->height, c->codec);
+	if (c->avc && V4L2_TYPE_IS_OUTPUT(f->type))
+		f->fmt.pix_mp.plane_fmt[0].sizeimage = c->input_size;
 	return 0;
 }
 static int try_fmt(struct file *file, void *fh, struct v4l2_format *f)
 {
 	struct context *c = context(fh);
 	u32 w = c->width, h = c->height;
+	if (c->avc) {
+		u32 bytes = clamp(f->fmt.pix_mp.plane_fmt[0].sizeimage, (u32)VDH_MAX_NAL, 4U * SZ_1M);
+		fill_fmt(f, w, h, V4L2_PIX_FMT_H264);
+		if (V4L2_TYPE_IS_OUTPUT(f->type))
+			f->fmt.pix_mp.plane_fmt[0].sizeimage = bytes;
+		return 0;
+	}
 	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
 		w = ALIGN(clamp(f->fmt.pix_mp.width, 16u, (u32)VDH_MAX_W), 16);
 		h = ALIGN(clamp(f->fmt.pix_mp.height, 16u, (u32)VDH_MAX_H), 16);
@@ -108,6 +143,10 @@ static int set_fmt(struct file *file, void *fh, struct v4l2_format *f)
 	if (vb2_is_busy(q))
 		return -EBUSY;
 	try_fmt(file, fh, f);
+	if (c->avc) {
+		if (V4L2_TYPE_IS_OUTPUT(f->type)) c->input_size = f->fmt.pix_mp.plane_fmt[0].sizeimage;
+		return 0;
+	}
 	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
 		if ((c->width != f->fmt.pix_mp.width || c->height != f->fmt.pix_mp.height) &&
 		    vb2_is_busy(v4l2_m2m_get_dst_vq(c->fh.m2m_ctx)))
@@ -120,8 +159,8 @@ static int set_fmt(struct file *file, void *fh, struct v4l2_format *f)
 }
 static int enum_size(struct file *file, void *fh, struct v4l2_frmsizeenum *f)
 {
-	if (f->index || (f->pixel_format != V4L2_PIX_FMT_H264_SLICE &&
-	    (!vdh.hw.hevc_ready || f->pixel_format != V4L2_PIX_FMT_HEVC_SLICE)))
+	if (f->index || (web_node(file) ? f->pixel_format != V4L2_PIX_FMT_H264 : (f->pixel_format != V4L2_PIX_FMT_H264_SLICE &&
+	    (!vdh.hw.hevc_ready || f->pixel_format != V4L2_PIX_FMT_HEVC_SLICE))))
 		return -EINVAL;
 	f->type = V4L2_FRMSIZE_TYPE_STEPWISE;
 	f->stepwise = (struct v4l2_frmsize_stepwise){16, VDH_MAX_W, 16, 16, VDH_MAX_H, 16};
@@ -135,6 +174,10 @@ static int get_selection(struct file *file, void *fh, struct v4l2_selection *s)
 	     s->target != V4L2_SEL_TGT_COMPOSE_DEFAULT && s->target != V4L2_SEL_TGT_CROP))
 		return -EINVAL;
 	s->r = (struct v4l2_rect){0, 0, c->width, c->height};
+	if (c->avc && c->announced && s->target != V4L2_SEL_TGT_COMPOSE_BOUNDS) {
+		s->r.width = c->avc->visible_w;
+		s->r.height = c->avc->visible_h;
+	}
 	return 0;
 }
 static const struct v4l2_ioctl_ops io = {
@@ -149,13 +192,14 @@ static const struct v4l2_ioctl_ops io = {
 	.vidioc_qbuf = v4l2_m2m_ioctl_qbuf, .vidioc_dqbuf = v4l2_m2m_ioctl_dqbuf,
 	.vidioc_expbuf = v4l2_m2m_ioctl_expbuf, .vidioc_streamon = v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff = v4l2_m2m_ioctl_streamoff,
-	.vidioc_subscribe_event = v4l2_ctrl_subscribe_event, .vidioc_unsubscribe_event = v4l2_event_unsubscribe,
+	.vidioc_decoder_cmd = v4l2_m2m_ioctl_decoder_cmd, .vidioc_try_decoder_cmd = v4l2_m2m_ioctl_try_decoder_cmd,
+	.vidioc_subscribe_event = subscribe, .vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 static int queue_setup(struct vb2_queue *q, unsigned int *n, unsigned int *planes,
 		       unsigned int sizes[], struct device *devs[])
 {
 	struct context *c = q->drv_priv;
-	u32 size = V4L2_TYPE_IS_OUTPUT(q->type) ? VDH_MAX_NAL : c->width*c->height*3/2;
+	u32 size = V4L2_TYPE_IS_OUTPUT(q->type) ? c->input_size : capture_bytes(c);
 	if (*planes && (*planes != 1 || sizes[0] < size))
 		return -EINVAL;
 	*planes = 1;
@@ -166,10 +210,22 @@ static int prepare(struct vb2_buffer *b)
 {
 	struct context *c = b->vb2_queue->drv_priv;
 	if (V4L2_TYPE_IS_OUTPUT(b->type)) {
-		if (b->planes[0].data_offset || vb2_get_plane_payload(b, 0) > VDH_MAX_NAL)
+		if (b->planes[0].data_offset || vb2_get_plane_payload(b, 0) > c->input_size)
 			return -EINVAL;
+		if (c->check) {
+			const u8 *slice = NULL;
+			size_t n = 0;
+			const u8 *data = vb2_plane_vaddr(b, 0);
+			struct vdh_stream no_ref = { .last = -1 };
+			int ret;
+			if (!data) return -EINVAL;
+			ret = mv100_avc_parse(c->check, data, vb2_get_plane_payload(b, 0),
+					      &slice, &n, &no_ref);
+			if (ret < 0 || n > VDH_MAX_NAL)
+				return -EOPNOTSUPP;
+		}
 	} else {
-		u32 size = c->width*c->height*3/2;
+		u32 size = capture_bytes(c);
 		if (vb2_plane_size(b, 0) < size)
 			return -EINVAL;
 		vb2_set_plane_payload(b, 0, size);
@@ -185,6 +241,33 @@ static int validate_output(struct vb2_buffer *b)
 static void queue(struct vb2_buffer *b)
 {
 	struct context *c = b->vb2_queue->drv_priv;
+	if (c->avc && V4L2_TYPE_IS_OUTPUT(b->type) && !c->announced) {
+		const u8 *slice = NULL, *bytes = vb2_plane_vaddr(b, 0);
+		size_t len = 0;
+		int ret = bytes ? mv100_avc_parse(c->avc, bytes, vb2_get_plane_payload(b, 0),
+						  &slice, &len, &c->stream) : -EINVAL;
+		if (ret < 0) {
+			vb2_queue_error(b->vb2_queue);
+			v4l2_m2m_buf_done(to_vb2_v4l2_buffer(b), VB2_BUF_STATE_ERROR);
+			return;
+		}
+		if (c->avc->has_sps) {
+			struct v4l2_event ev = { .type = V4L2_EVENT_SOURCE_CHANGE,
+				.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION };
+			c->width = c->avc->width; c->height = c->avc->height;
+			c->announced = true;
+			v4l2_event_queue_fh(&c->fh, &ev);
+		}
+		if (!ret) {
+			v4l2_m2m_buf_done(to_vb2_v4l2_buffer(b), VB2_BUF_STATE_DONE);
+			return;
+		}
+	}
+	if (c->avc && !V4L2_TYPE_IS_OUTPUT(b->type) && v4l2_m2m_dst_buf_is_last(c->fh.m2m_ctx)) {
+		vb2_set_plane_payload(b, 0, 0);
+		v4l2_m2m_last_buffer_done(c->fh.m2m_ctx, to_vb2_v4l2_buffer(b));
+		return;
+	}
 	v4l2_m2m_buf_queue(c->fh.m2m_ctx, to_vb2_v4l2_buffer(b));
 }
 static void return_buffers(struct vb2_queue *q, enum vb2_buffer_state state)
@@ -202,7 +285,13 @@ static void return_buffers(struct vb2_queue *q, enum vb2_buffer_state state)
 static int start(struct vb2_queue *q, unsigned int count)
 {
 	struct context *c = q->drv_priv;
-	if (V4L2_TYPE_IS_OUTPUT(q->type)) {
+	if (c->avc && !V4L2_TYPE_IS_OUTPUT(q->type) && !c->announced) {
+		return_buffers(q, VB2_BUF_STATE_QUEUED);
+		return -EINVAL;
+	}
+	if (c->avc)
+		v4l2_m2m_update_start_streaming_state(c->fh.m2m_ctx, q);
+	if ((c->avc && !V4L2_TYPE_IS_OUTPUT(q->type)) || (!c->avc && V4L2_TYPE_IS_OUTPUT(q->type))) {
 		int err = vdh.owner ? -EBUSY : vdh_start_stream(&vdh.hw, c->width, c->height);
 		if (err) {
 			return_buffers(q, VB2_BUF_STATE_QUEUED);
@@ -216,7 +305,13 @@ static int start(struct vb2_queue *q, unsigned int count)
 }
 static void stop(struct vb2_queue *q)
 {
-	if (V4L2_TYPE_IS_OUTPUT(q->type) && vdh.owner == q->drv_priv) {
+	struct context *c = q->drv_priv;
+	if (c->avc) v4l2_m2m_update_stop_streaming_state(c->fh.m2m_ctx, q);
+	if (V4L2_TYPE_IS_OUTPUT(q->type) && c->avc) {
+		c->announced = false;
+		memset(c->avc, 0, 2 * sizeof(*c->avc));
+	}
+	if (vdh.owner == c && (c->avc || V4L2_TYPE_IS_OUTPUT(q->type))) {
 		vdh_stop_stream(&vdh.hw);
 		vdh.owner = NULL;
 	}
@@ -244,13 +339,34 @@ static int setup_queue(struct context *c, struct vb2_queue *q, bool src)
 	q->dev = &vdh.pdev->dev;
 	q->lock = &vdh.mutex;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
-	q->requires_requests = q->supports_requests = src;
+	q->requires_requests = q->supports_requests = src && !c->avc;
 	return vb2_queue_init(q);
 }
 static int setup_queues(void *ctx, struct vb2_queue *out, struct vb2_queue *cap)
 {
 	int ret = setup_queue(ctx, out, true);
 	return ret ? ret : setup_queue(ctx, cap, false);
+}
+static int decode_access_unit(struct context *c, struct vb2_v4l2_buffer *src,
+			      struct vb2_v4l2_buffer *dst)
+{
+	const u8 *data = vb2_plane_vaddr(&src->vb2_buf, 0);
+	u8 *out = vb2_plane_vaddr(&dst->vb2_buf, 0);
+	struct vdh_picture p = {
+		.sps = &c->avc->sps, .pps = &c->avc->pps, .decode = &c->avc->dec,
+		.width = c->width, .height = c->height, .out = out,
+		.timestamp = src->vb2_buf.timestamp,
+	};
+	int ret;
+	if (vdh.owner != c || !vdh.hw.mem)
+		return -EPIPE;
+	if (!p.out || !data || !out || vb2_plane_size(&dst->vb2_buf, 0) < capture_bytes(c))
+		return -EINVAL;
+	ret = mv100_avc_parse(c->avc, data, vb2_get_plane_payload(&src->vb2_buf, 0),
+			      &p.data, &p.bytes, &c->stream);
+	if (ret <= 0)
+		return ret ? ret : -ENODATA;
+	return vdh_picture(&vdh.hw, &c->stream, &p);
 }
 static void run_work(struct work_struct *w)
 {
@@ -259,8 +375,9 @@ static void run_work(struct work_struct *w)
 	struct vb2_v4l2_buffer *dst = v4l2_m2m_dst_buf_remove(c->fh.m2m_ctx);
 	struct media_request *req = src->vb2_buf.req_obj.req;
 	enum vb2_buffer_state state = VB2_BUF_STATE_ERROR;
-	int ret = v4l2_ctrl_request_setup(req, &c->controls);
-	if (!ret) {
+	int ret = c->avc ? decode_access_unit(c, src, dst) :
+		v4l2_ctrl_request_setup(req, &c->controls);
+	if (!c->avc && !ret) {
 		struct vdh_picture p = {
 			.sps = c->sps->p_cur.p_h264_sps, .pps = c->pps->p_cur.p_h264_pps,
 			.decode = c->decode->p_cur.p_h264_decode_params,
@@ -279,7 +396,22 @@ static void run_work(struct work_struct *w)
 			ret = vdh_picture(&vdh.hw, &c->stream, &p);
 		}
 	}
+	if (c->avc && ret == -ENODATA) {
+		/* SPS/PPS/SEI can arrive as independent buffers. They produce no frame. */
+		if (v4l2_m2m_is_last_draining_src_buf(c->fh.m2m_ctx, src)) {
+			vb2_set_plane_payload(&dst->vb2_buf, 0, 0);
+			v4l2_m2m_last_buffer_done(c->fh.m2m_ctx, dst);
+		} else {
+			v4l2_m2m_buf_queue(c->fh.m2m_ctx, dst);
+		}
+		v4l2_m2m_buf_done(src, VB2_BUF_STATE_DONE);
+		v4l2_m2m_job_finish(vdh.m2m, c->fh.m2m_ctx);
+		return;
+	}
 	if (ret) {
+		if (c->avc)
+			dev_dbg_ratelimited(vdh.hw.dev, "AVC buffer %u length %lu status %d\n",
+					     c->sequence, (unsigned long)vb2_get_plane_payload(&src->vb2_buf, 0), ret);
 		vdh.hw.errors++;
 		c->stream.last = -1;
 		vb2_set_plane_payload(&dst->vb2_buf, 0, 0);
@@ -289,7 +421,12 @@ static void run_work(struct work_struct *w)
 	}
 	v4l2_m2m_buf_copy_metadata(src, dst, true);
 	dst->sequence = src->sequence = c->sequence++;
-	v4l2_ctrl_request_complete(req, &c->controls);
+	if (!c->avc)
+		v4l2_ctrl_request_complete(req, &c->controls);
+	else if (v4l2_m2m_is_last_draining_src_buf(c->fh.m2m_ctx, src)) {
+		dst->flags |= V4L2_BUF_FLAG_LAST;
+		v4l2_m2m_mark_stopped(c->fh.m2m_ctx);
+	}
 	v4l2_m2m_buf_done(src, state);
 	v4l2_m2m_buf_done(dst, state);
 	v4l2_m2m_job_finish(vdh.m2m, c->fh.m2m_ctx);
@@ -320,7 +457,14 @@ static int open_video(struct file *file)
 	int ret;
 	if (!c)
 		return -ENOMEM;
-	v4l2_fh_init(&c->fh, &vdh.video);
+	v4l2_fh_init(&c->fh, video_devdata(file));
+	if (web_node(file)) {
+		c->avc = kcalloc(2, sizeof(*c->avc), GFP_KERNEL);
+		if (!c->avc) { v4l2_fh_exit(&c->fh); kfree(c); return -ENOMEM; }
+		c->stream.last = -1;
+		c->check = c->avc + 1;
+	}
+	c->input_size = VDH_MAX_NAL;
 	v4l2_ctrl_handler_init(&c->controls, 15);
 	c->sps = compound(c, V4L2_CID_STATELESS_H264_SPS);
 	c->pps = compound(c, V4L2_CID_STATELESS_H264_PPS);
@@ -352,7 +496,7 @@ static int open_video(struct file *file)
 		goto fail;
 	c->fh.ctrl_handler = &c->controls;
 	c->width = c->height = 64;
-	c->codec = V4L2_PIX_FMT_H264_SLICE;
+	c->codec = c->avc ? V4L2_PIX_FMT_H264 : V4L2_PIX_FMT_H264_SLICE;
 	INIT_WORK(&c->work, run_work);
 	c->fh.m2m_ctx = v4l2_m2m_ctx_init(vdh.m2m, c, setup_queues);
 	if (IS_ERR(c->fh.m2m_ctx)) {
@@ -365,6 +509,7 @@ static int open_video(struct file *file)
 fail:
 	v4l2_ctrl_handler_free(&c->controls);
 	v4l2_fh_exit(&c->fh);
+	kfree(c->avc);
 	kfree(c);
 	return ret;
 }
@@ -378,6 +523,7 @@ static int close_video(struct file *file)
 	v4l2_fh_del(&c->fh);
 	v4l2_ctrl_handler_free(&c->controls);
 	v4l2_fh_exit(&c->fh);
+	kfree(c->avc);
 	kfree(c);
 	return 0;
 }
@@ -425,9 +571,13 @@ static int __init vdh_init(void)
 	vdh.video.release = video_device_release_empty;
 	vdh.video.vfl_dir = VFL_DIR_M2M;
 	vdh.video.device_caps = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
+	vdh.web = vdh.video;
+	strscpy(vdh.web.name, "mv100-vdh-avc", sizeof(vdh.web.name));
+	ret = video_register_device(&vdh.web, VFL_TYPE_VIDEO, -1);
+	if (ret) goto fail_m2m;
 	ret = video_register_device(&vdh.video, VFL_TYPE_VIDEO, -1);
 	if (ret)
-		goto fail_m2m;
+		goto fail_web;
 	ret = v4l2_m2m_register_media_controller(vdh.m2m, &vdh.video, MEDIA_ENT_F_PROC_VIDEO_DECODER);
 	if (ret)
 		goto fail_video;
@@ -442,6 +592,8 @@ fail_controller:
 	v4l2_m2m_unregister_media_controller(vdh.m2m);
 fail_video:
 	video_unregister_device(&vdh.video);
+fail_web:
+	video_unregister_device(&vdh.web);
 fail_m2m:
 	v4l2_m2m_release(vdh.m2m);
 fail_v4l:
@@ -458,6 +610,7 @@ static void __exit vdh_exit(void)
 	media_device_unregister(&vdh.media);
 	v4l2_m2m_unregister_media_controller(vdh.m2m);
 	video_unregister_device(&vdh.video);
+	video_unregister_device(&vdh.web);
 	v4l2_m2m_release(vdh.m2m);
 	v4l2_device_unregister(&vdh.v4l2);
 	media_device_cleanup(&vdh.media);

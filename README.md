@@ -8,7 +8,7 @@ LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构�
 
 ## Chromium 图形与视频
 
-6.12.114 的桌面浏览器默认使用 Mali450 加速网页合成、栅格化、Canvas 和 WebGL 1。在地址栏打开 `chrome://gpu` 可以查看实际渲染器。H.264 播放仍使用 CPU 解码。已经安装上一版 6.12.114 的盒子可直接更新用户态，步骤见板级说明。[真机验收](HARDWARE.md) · [已有 6.12 系统的浏览器更新](board/linux-6.12/README.md#更新已有-612-桌面的浏览器)
+安装网页视频更新后，Xfce 的 Chromium 156 可以调用海思 VDH 播放符合条件的 H.264。已在 HTML 视频和 Media Source Extensions 分段播放中验收，网页图形由 Mali450 加速。当前硬解覆盖 8 位、逐行、单 slice、单参考帧的 I/P 码流。网站实际下发的编码决定能否启用。旧归档中的 Debian Chromium 150 继续作为回退入口。[通过 SSH 安装或回退](board/vdh/chromium/README.md) · [网页视频实测](evidence/chromium-vdh.md)
 
 本地视频可使用 VDH 硬解 H.264 和 H.265 Main 的单参考帧 I/P 码流，已在 1920×1080 逐帧核对画面。打开视频文件或运行 `histb-play 文件名` 即可自动选择解码方式，其他格式由 FFmpeg 接手。已有系统可通过 SSH 安装独立更新。[安装、支持范围与回退](board/vdh/README.md) · [解码验收](evidence/vdh-6.12.114.md)
 

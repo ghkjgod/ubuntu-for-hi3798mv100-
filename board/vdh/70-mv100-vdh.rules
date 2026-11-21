@@ -1,2 +1,3 @@
 SUBSYSTEM=="video4linux", KERNELS=="mv100-vdh", ATTR{name}=="mv100-vdh", GROUP="video", MODE="0660", SYMLINK+="video-dec0"
 SUBSYSTEM=="media", KERNELS=="mv100-vdh", GROUP="video", MODE="0660", SYMLINK+="media-dec0"
+SUBSYSTEM=="video4linux", KERNELS=="mv100-vdh", ATTR{name}=="mv100-vdh-avc", GROUP="video", MODE="0660", SYMLINK+="mv100-avc"

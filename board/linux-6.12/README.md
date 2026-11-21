@@ -85,3 +85,5 @@ systemctl reboot
 ```
 
 若无法进入系统，用台架保存的 stock-boot.bin 执行同样的 TFTP 内存引导。此恢复镜像来自该设备原 p6，长度 10862647，RAM CRC32 为 82cc9922。以原 bootargs 启动后，仍从原 p9 进入 Ubuntu，再执行上述 restore。该网口恢复路径已在真机演练到 4.4 桌面和 SSH。台架离线目录为 E:\build\lab\kernel-612114，保存 stock-p6.bin、stock-boot.bin 和设备专用工具。本次追加的完整设备专用恢复目录位于 E:\build\lab\kernel-612114-recovery-final，含完整性清单及维护脚本所需的历史内核文件。保持原 U-Boot 的持久 bootcmd。
+
+在此图形环境上安装网页 H.264 解码器及对应 Chromium 后端，可以继续使用原 Xfce 浏览器图标。[网页视频更新](../vdh/chromium/README.md)

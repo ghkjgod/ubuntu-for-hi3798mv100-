@@ -19,3 +19,7 @@ board/vdh/Kbuild text eol=lf
 board/vdh/*.rules text eol=lf
 board/vdh/*.desktop text eol=lf
 board/vdh/prebuilt/SHA256SUMS text eol=lf
+board/vdh/chromium/SHA256SUMS text eol=lf
+board/vdh/chromium/*.service text eol=lf
+board/vdh/*.h text eol=lf
+tests/resources/chromium-vdh.html text eol=lf

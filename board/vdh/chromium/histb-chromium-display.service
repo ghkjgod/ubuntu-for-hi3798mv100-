@@ -1,0 +1,17 @@
+[Unit]
+Description=Wayland display for Hi3798 Chromium video
+After=display-manager.service
+ConditionPathExists=/usr/bin/weston
+
+[Service]
+Type=simple
+User=desktop
+Group=desktop
+SupplementaryGroups=render video
+RuntimeDirectory=histb-chromium-display
+RuntimeDirectoryMode=0700
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/histb-chromium-display
+Environment=XAUTHORITY=/run/histb-chromium-display/Xauthority
+ExecStartPre=+/usr/local/lib/histb-webvideo/display-auth.sh
+ExecStart=/usr/bin/weston --backend=x11 --socket=wayland-vdh --shell=kiosk-shell.so --width=1280 --height=720 --no-config --idle-time=0

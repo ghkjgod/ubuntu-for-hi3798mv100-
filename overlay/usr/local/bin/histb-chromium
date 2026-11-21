@@ -6,6 +6,11 @@ b=/opt/histb-chromium
     echo "Launch this browser from the local root desktop after installing its runtime." >&2
     exit 1
 }
+if [[ ${HISTB_WEBVIDEO_SESSION:-0} != 1 && ${HISTB_CHROMIUM_X11:-0} != 1 &&
+      ${HISTB_CHROMIUM_SOFTWARE:-0} != 1 && -f /etc/histb/chromium-vdh.enabled &&
+      -c /dev/mv100-avc && -x /usr/local/lib/histb-webvideo/with-display.sh ]]; then
+    exec /usr/local/lib/histb-webvideo/with-display.sh "$@"
+fi
 if [[ ${HISTB_CHROME_MOUNTS:-} != private ]]; then
     exec unshare --mount --propagation private env HISTB_CHROME_MOUNTS=private "$0" "$@"
 fi
@@ -26,6 +31,16 @@ if findmnt -rn -t ext4 --mountpoint /srv/tf >/dev/null && [[ -d /srv/tf/desktop 
     mount --bind /srv/tf/desktop "$b/media/tf"
 fi
 install -d -m 0700 -o "$uid" -g "$gid" "$b/run/browser"
+web=${HISTB_WEBVIDEO_SESSION:-0}
+if [[ $web == 1 ]]; then
+    release=$(realpath /opt/histb-webvideo/current)
+    for item in usr/lib/chromium usr/share/chromium etc/chromium.d usr/bin/chromium; do
+        mount --bind "$release/$item" "$b/$item"
+        mount -o remount,bind,ro "$b/$item"
+    done
+    touch "$b/run/browser/wayland-vdh"
+    mount --bind /run/histb-chromium-display/wayland-vdh "$b/run/browser/wayland-vdh"
+fi
 cookie="$b/run/browser/Xauthority"
 touch "$cookie"
 xauth -f "${XAUTHORITY:-/root/.Xauthority}" extract "$cookie" "${DISPLAY:-:0}"
@@ -57,6 +72,13 @@ if [[ ${HISTB_CHROMIUM_SOFTWARE:-0} != 1 && -r $selector &&
         graphics=(--use-gl=angle --use-angle=gles --disable-features=FallbackToSWIfGLES3NotSupported,AllowANGLEPassthroughShaders)
         break
     done
+fi
+if [[ $web == 1 ]]; then
+    driver_env+=(WAYLAND_DISPLAY=wayland-vdh)
+    groups=(--groups="$(getent group render | cut -d: -f3),$(stat -Lc %g /dev/mv100-avc)")
+    graphics+=(--ozone-platform=wayland --enable-native-gpu-memory-buffers
+        --enable-features=AcceleratedVideoDecoder,AcceleratedVideoDecodeLinuxGL,PreferV4L2VideoAcceleration
+        --user-data-dir=/home/desktop/.config/chromium-vdh)
 fi
 exec env -i HOME="$home" USER="$user" LOGNAME="$user" LANG=C.UTF-8 PATH=/usr/bin:/bin \
     DISPLAY="${DISPLAY:-:0}" XAUTHORITY=/run/browser/Xauthority XDG_RUNTIME_DIR=/run/browser \

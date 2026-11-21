@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Chromium 网页视频复测</title>
+<style>body{font:18px sans-serif;margin:1rem}video{display:block;width:min(100%,960px);background:#111}button{margin:.8em 0}output{margin-left:1em}</style>
+<video controls muted playsinline></video>
+<button type="button">播放测试片</button><output></output>
+<script>
+const query = new URLSearchParams(location.search);
+const video = document.querySelector('video');
+const status = document.querySelector('output');
+const file = query.get('file') || 'video.mp4';
+const once = (target, event) => new Promise((resolve, reject) => {
+    function success(value) { target.removeEventListener('error', fail); resolve(value); }
+    function fail() { target.removeEventListener(event, success); reject(target.error || Error(event)); }
+    target.addEventListener(event, success, {once:true});
+    target.addEventListener('error', fail, {once:true});
+});
+async function playSample() {
+    const button = document.querySelector('button');
+    button.disabled = true;
+    try {
+        const ended = once(video, 'ended');
+        const start = performance.now();
+        if (query.get('mse') === '1') {
+            const type = 'video/mp4; codecs="avc1.64001f, mp4a.40.2"';
+            if (!MediaSource.isTypeSupported(type)) throw Error('浏览器无法接受该 MSE 类型');
+            const media = new MediaSource();
+            const ready = once(media, 'sourceopen');
+            video.src = URL.createObjectURL(media);
+            await ready;
+            const buffer = media.addSourceBuffer(type);
+            const response = await fetch(file);
+            if (!response.ok) throw Error('HTTP ' + response.status);
+            const reader = response.body.getReader();
+            const playing = video.play();
+            for (;;) {
+                const {value, done} = await reader.read();
+                if (done) break;
+                const appended = once(buffer, 'updateend');
+                buffer.appendBuffer(value);
+                await appended;
+            }
+            media.endOfStream();
+            await playing;
+        } else {
+            video.src = file;
+            await video.play();
+        }
+        await ended;
+        const q = video.getVideoPlaybackQuality();
+        const result = {width:video.videoWidth, height:video.videoHeight,
+            seconds:video.duration, wall:(performance.now()-start)/1000,
+            total:q.totalVideoFrames, dropped:q.droppedVideoFrames};
+        status.textContent = JSON.stringify(result);
+        return result;
+    } catch (e) {
+        status.textContent = String(e);
+        throw e;
+    } finally {
+        button.disabled = false;
+    }
+}
+document.querySelector('button').onclick = () => playSample().catch(() => {});
+</script>
+</html>
