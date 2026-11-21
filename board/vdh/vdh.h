@@ -4,6 +4,7 @@
 #include <linux/device.h>
 #include <linux/regmap.h>
 #include <linux/videodev2.h>
+#define VDH_AVC_SLOTS 9
 #define VDH_MAX_W 1920
 #define VDH_MAX_H 1088
 #define VDH_MAX_NAL (1024 * 1024)
@@ -24,13 +25,26 @@ struct vdh_hw {
 	struct regmap *crg;
 	u8 *mem;
 	dma_addr_t dma;
-	struct vdh_surface surfaces[2];
+	struct vdh_surface surfaces[VDH_AVC_SLOTS];
+	void *extra_pmv[VDH_AVC_SLOTS];
+	dma_addr_t pmv_dma[VDH_AVC_SLOTS];
 	struct vdh_layout layout;
 	bool wedged, hevc_ready, h264_cabac_ready;
 	u8 hevc_cabac[928], h264_cabac[5120];
 	unsigned long frames, errors;
 };
+struct vdh_reference {
+	bool valid;
+	u16 frame_num;
+	s32 poc;
+	u64 timestamp;
+};
 struct vdh_stream {
+	struct vdh_reference refs[VDH_AVC_SLOTS];
+	s32 output_poc;
+	bool output_idr;
+	s32 prev_poc_msb;
+	u16 prev_poc_lsb;
 	int last;
 	u64 timestamp;
 	s32 poc;
@@ -46,6 +60,7 @@ struct vdh_picture {
 	const u8 *data;
 	size_t bytes;
 	u8 *out;
+	bool stateful;
 	u32 width, height;
 	u64 timestamp;
 };

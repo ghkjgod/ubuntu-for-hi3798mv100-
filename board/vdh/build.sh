@@ -8,7 +8,7 @@ release=6.12.114-hi3798-mv100-exp
 test -s "$out/Module.symvers"
 grep -Fxq "$release" "$out/include/config/kernel.release"
 mkdir -p "$build"
-cp "$here"/{Kbuild,vdh.h,vdh-avc.h,vdh-avc.c,vdh-hw.c,vdh-video.c} "$build/"
+cp "$here"/{Kbuild,vdh.h,vdh-avc.h,vdh-avc.c,vdh-avc-slice.inc,vdh-hw.c,vdh-video.c} "$build/"
 make -C "$kernel" O="$out" M="$build" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE-arm-linux-gnueabihf-}" modules
 modinfo -F vermagic "$build/mv100-vdh.ko" | grep -F "$release "
 sha256sum "$build/mv100-vdh.ko"

@@ -23,3 +23,9 @@ board/vdh/chromium/SHA256SUMS text eol=lf
 board/vdh/chromium/*.service text eol=lf
 board/vdh/*.h text eol=lf
 tests/resources/chromium-vdh.html text eol=lf
+board/vdh/*.inc text eol=lf
+board/vdh/wiliwili/*.patch text eol=lf -whitespace
+board/vdh/wiliwili/*.lua text eol=lf
+board/vdh/wiliwili/wiliwili-launch text eol=lf
+board/vdh/wiliwili/dist/SHA256SUMS text eol=lf
+board/vdh/wiliwili/dist/*.deb binary

@@ -7,7 +7,7 @@ struct mv100_avc {
 	struct v4l2_ctrl_h264_sps sps;
 	struct v4l2_ctrl_h264_pps pps;
 	struct v4l2_ctrl_h264_decode_params dec;
-	unsigned int width, height, visible_w, visible_h;
+	unsigned int reorder, width, height, visible_w, visible_h;
 	bool has_sps, has_pps;
 };
 

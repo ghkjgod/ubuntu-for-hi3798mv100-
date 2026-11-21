@@ -24,6 +24,9 @@ struct context {
 	struct mv100_avc *avc, *check;
 	u32 input_size;
 	bool announced;
+	struct mutex display_lock;
+	struct { struct vb2_v4l2_buffer *buffer; s32 poc; } pending[17];
+	unsigned int pending_count, output_sequence;
 	u32 width, height, sequence, codec;
 	struct v4l2_ctrl *hsps, *hpps, *hsl, *hdec;
 };
@@ -37,6 +40,7 @@ static struct {
 	struct vdh_hw hw;
 	struct dentry *debug;
 	struct context *owner;
+	atomic_t avc_refusals;
 } vdh;
 static ssize_t decoded_frames_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -46,10 +50,16 @@ static ssize_t rejected_frames_show(struct device *dev, struct device_attribute 
 {
 	return sysfs_emit(buf, "%lu\n", READ_ONCE(vdh.hw.errors));
 }
+/* Published for players that select the stateful short-term-reference decoder. */
+static ssize_t avc_refusals_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", atomic_read(&vdh.avc_refusals));
+}
+static DEVICE_ATTR_RO(avc_refusals);
 static DEVICE_ATTR_RO(decoded_frames);
 static DEVICE_ATTR_RO(rejected_frames);
 static struct attribute *vdh_attributes[] = {
-	&dev_attr_decoded_frames.attr, &dev_attr_rejected_frames.attr, NULL,
+	&dev_attr_decoded_frames.attr, &dev_attr_rejected_frames.attr, &dev_attr_avc_refusals.attr, NULL,
 };
 static const struct attribute_group vdh_stats = { .attrs = vdh_attributes };
 static inline struct context *context(void *fh)
@@ -75,6 +85,8 @@ static int subscribe(struct v4l2_fh *fh, const struct v4l2_event_subscription *s
 {
 	if (fh->vdev == &vdh.web && sub->type == V4L2_EVENT_SOURCE_CHANGE)
 		return v4l2_src_change_event_subscribe(fh, sub);
+	if (fh->vdev == &vdh.web && sub->type == V4L2_EVENT_EOS)
+		return v4l2_event_subscribe(fh, sub, 1, NULL);
 	return v4l2_ctrl_subscribe_event(fh, sub);
 }
 static int enum_fmt(struct file *file, void *fh, struct v4l2_fmtdesc *f)
@@ -180,6 +192,42 @@ static int get_selection(struct file *file, void *fh, struct v4l2_selection *s)
 	}
 	return 0;
 }
+static void release_display(struct context *c, unsigned int keep, enum vb2_buffer_state state)
+{
+	while (c->pending_count > keep) {
+		struct vb2_v4l2_buffer *buf = c->pending[0].buffer;
+		buf->sequence = c->output_sequence++;
+		memmove(c->pending, c->pending + 1, (--c->pending_count) * sizeof(c->pending[0]));
+		v4l2_m2m_buf_done(buf, state);
+	}
+}
+
+static int decoder_command(struct file *file, void *fh, struct v4l2_decoder_cmd *cmd)
+{
+	struct context *c = context(fh);
+	int ret;
+	mutex_lock(&c->display_lock);
+	if (cmd->cmd == V4L2_DEC_CMD_STOP && !v4l2_m2m_next_src_buf(c->fh.m2m_ctx) &&
+	    c->pending_count && !c->fh.m2m_ctx->is_draining) {
+		ret = v4l2_m2m_ioctl_try_decoder_cmd(file, fh, cmd);
+		if (!ret) {
+			const struct v4l2_event ev = { .type = V4L2_EVENT_EOS };
+			c->pending[c->pending_count-1].buffer->flags |= V4L2_BUF_FLAG_LAST;
+			release_display(c, 0, VB2_BUF_STATE_DONE);
+			v4l2_m2m_mark_stopped(c->fh.m2m_ctx);
+			v4l2_event_queue_fh(&c->fh, &ev);
+		}
+		mutex_unlock(&c->display_lock);
+		return ret;
+	}
+	ret = v4l2_m2m_ioctl_decoder_cmd(file, fh, cmd);
+	if (!ret && cmd->cmd == V4L2_DEC_CMD_STOP && c->fh.m2m_ctx->has_stopped) {
+		const struct v4l2_event ev = { .type = V4L2_EVENT_EOS };
+		v4l2_event_queue_fh(&c->fh, &ev);
+	}
+	mutex_unlock(&c->display_lock);
+	return ret;
+}
 static const struct v4l2_ioctl_ops io = {
 	.vidioc_querycap = querycap,
 	.vidioc_enum_fmt_vid_cap = enum_fmt, .vidioc_enum_fmt_vid_out = enum_fmt,
@@ -192,7 +240,7 @@ static const struct v4l2_ioctl_ops io = {
 	.vidioc_qbuf = v4l2_m2m_ioctl_qbuf, .vidioc_dqbuf = v4l2_m2m_ioctl_dqbuf,
 	.vidioc_expbuf = v4l2_m2m_ioctl_expbuf, .vidioc_streamon = v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff = v4l2_m2m_ioctl_streamoff,
-	.vidioc_decoder_cmd = v4l2_m2m_ioctl_decoder_cmd, .vidioc_try_decoder_cmd = v4l2_m2m_ioctl_try_decoder_cmd,
+	.vidioc_decoder_cmd = decoder_command, .vidioc_try_decoder_cmd = v4l2_m2m_ioctl_try_decoder_cmd,
 	.vidioc_subscribe_event = subscribe, .vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 static int queue_setup(struct vb2_queue *q, unsigned int *n, unsigned int *planes,
@@ -202,6 +250,8 @@ static int queue_setup(struct vb2_queue *q, unsigned int *n, unsigned int *plane
 	u32 size = V4L2_TYPE_IS_OUTPUT(q->type) ? c->input_size : capture_bytes(c);
 	if (*planes && (*planes != 1 || sizes[0] < size))
 		return -EINVAL;
+	if (c->avc && !V4L2_TYPE_IS_OUTPUT(q->type) && c->announced)
+		*n = max(*n, c->avc->reorder + 3);
 	*planes = 1;
 	sizes[0] = size;
 	return 0;
@@ -221,14 +271,16 @@ static int prepare(struct vb2_buffer *b)
 			if (!data) return -EINVAL;
 			ret = mv100_avc_parse(c->check, data, vb2_get_plane_payload(b, 0),
 					      &slice, &n, &no_ref);
-			if (ret < 0 || n > VDH_MAX_NAL)
+			if (ret < 0 || n > VDH_MAX_NAL) {
+				atomic_inc(&vdh.avc_refusals);
 				return -EOPNOTSUPP;
+			}
 		}
 	} else {
 		u32 size = capture_bytes(c);
 		if (vb2_plane_size(b, 0) < size)
 			return -EINVAL;
-		vb2_set_plane_payload(b, 0, size);
+		vb2_set_plane_payload(b, 0, 0);
 	}
 	to_vb2_v4l2_buffer(b)->field = V4L2_FIELD_NONE;
 	return 0;
@@ -298,14 +350,18 @@ static int start(struct vb2_queue *q, unsigned int count)
 			return err;
 		}
 		vdh.owner = c;
+		memset(&c->stream, 0, sizeof(c->stream));
 		c->stream.last = -1;
-		c->sequence = 0;
+		c->sequence = c->output_sequence = 0;
 	}
 	return 0;
 }
 static void stop(struct vb2_queue *q)
 {
 	struct context *c = q->drv_priv;
+	mutex_lock(&c->display_lock);
+	release_display(c, 0, VB2_BUF_STATE_ERROR);
+	mutex_unlock(&c->display_lock);
 	if (c->avc) v4l2_m2m_update_stop_streaming_state(c->fh.m2m_ctx, q);
 	if (V4L2_TYPE_IS_OUTPUT(q->type) && c->avc) {
 		c->announced = false;
@@ -353,7 +409,7 @@ static int decode_access_unit(struct context *c, struct vb2_v4l2_buffer *src,
 	const u8 *data = vb2_plane_vaddr(&src->vb2_buf, 0);
 	u8 *out = vb2_plane_vaddr(&dst->vb2_buf, 0);
 	struct vdh_picture p = {
-		.sps = &c->avc->sps, .pps = &c->avc->pps, .decode = &c->avc->dec,
+		.stateful = true, .sps = &c->avc->sps, .pps = &c->avc->pps, .decode = &c->avc->dec,
 		.width = c->width, .height = c->height, .out = out,
 		.timestamp = src->vb2_buf.timestamp,
 	};
@@ -371,7 +427,7 @@ static int decode_access_unit(struct context *c, struct vb2_v4l2_buffer *src,
 static void run_work(struct work_struct *w)
 {
 	struct context *c = container_of(w, struct context, work);
-	struct vb2_v4l2_buffer *src = v4l2_m2m_src_buf_remove(c->fh.m2m_ctx);
+	struct vb2_v4l2_buffer *src = v4l2_m2m_next_src_buf(c->fh.m2m_ctx);
 	struct vb2_v4l2_buffer *dst = v4l2_m2m_dst_buf_remove(c->fh.m2m_ctx);
 	struct media_request *req = src->vb2_buf.req_obj.req;
 	enum vb2_buffer_state state = VB2_BUF_STATE_ERROR;
@@ -396,15 +452,19 @@ static void run_work(struct work_struct *w)
 			ret = vdh_picture(&vdh.hw, &c->stream, &p);
 		}
 	}
+	mutex_lock(&c->display_lock);
+	v4l2_m2m_src_buf_remove(c->fh.m2m_ctx);
 	if (c->avc && ret == -ENODATA) {
 		/* SPS/PPS/SEI can arrive as independent buffers. They produce no frame. */
 		if (v4l2_m2m_is_last_draining_src_buf(c->fh.m2m_ctx, src)) {
+			release_display(c, 0, VB2_BUF_STATE_DONE);
 			vb2_set_plane_payload(&dst->vb2_buf, 0, 0);
 			v4l2_m2m_last_buffer_done(c->fh.m2m_ctx, dst);
 		} else {
 			v4l2_m2m_buf_queue(c->fh.m2m_ctx, dst);
 		}
 		v4l2_m2m_buf_done(src, VB2_BUF_STATE_DONE);
+		mutex_unlock(&c->display_lock);
 		v4l2_m2m_job_finish(vdh.m2m, c->fh.m2m_ctx);
 		return;
 	}
@@ -412,23 +472,47 @@ static void run_work(struct work_struct *w)
 		if (c->avc)
 			dev_dbg_ratelimited(vdh.hw.dev, "AVC buffer %u length %lu status %d\n",
 					     c->sequence, (unsigned long)vb2_get_plane_payload(&src->vb2_buf, 0), ret);
+		if (c->avc) atomic_inc(&vdh.avc_refusals);
 		vdh.hw.errors++;
+		memset(&c->stream, 0, sizeof(c->stream));
 		c->stream.last = -1;
 		vb2_set_plane_payload(&dst->vb2_buf, 0, 0);
 		dev_dbg(vdh.hw.dev, "request rejected: %d\n", ret);
 	} else {
 		state = VB2_BUF_STATE_DONE;
+		vb2_set_plane_payload(&dst->vb2_buf, 0, capture_bytes(c));
 	}
 	v4l2_m2m_buf_copy_metadata(src, dst, true);
 	dst->sequence = src->sequence = c->sequence++;
 	if (!c->avc)
 		v4l2_ctrl_request_complete(req, &c->controls);
-	else if (v4l2_m2m_is_last_draining_src_buf(c->fh.m2m_ctx, src)) {
-		dst->flags |= V4L2_BUF_FLAG_LAST;
-		v4l2_m2m_mark_stopped(c->fh.m2m_ctx);
+	if (c->avc && !ret) {
+		unsigned int pos = c->pending_count;
+		if (c->stream.output_idr) {
+			release_display(c, 0, VB2_BUF_STATE_DONE);
+			pos = 0;
+		}
+		while (pos && c->pending[pos-1].poc > c->stream.output_poc) {
+			c->pending[pos] = c->pending[pos-1];
+			pos--;
+		}
+		c->pending[pos].buffer = dst;
+		c->pending[pos].poc = c->stream.output_poc;
+		c->pending_count++;
+		if (v4l2_m2m_is_last_draining_src_buf(c->fh.m2m_ctx, src)) {
+			const struct v4l2_event ev = { .type = V4L2_EVENT_EOS };
+			c->pending[c->pending_count-1].buffer->flags |= V4L2_BUF_FLAG_LAST;
+			release_display(c, 0, state);
+			v4l2_m2m_mark_stopped(c->fh.m2m_ctx);
+			v4l2_event_queue_fh(&c->fh, &ev);
+		} else {
+			release_display(c, c->avc->reorder, state);
+		}
+	} else {
+		v4l2_m2m_buf_done(dst, state);
 	}
 	v4l2_m2m_buf_done(src, state);
-	v4l2_m2m_buf_done(dst, state);
+	mutex_unlock(&c->display_lock);
 	v4l2_m2m_job_finish(vdh.m2m, c->fh.m2m_ctx);
 }
 static void run(void *ctx)
@@ -457,10 +541,12 @@ static int open_video(struct file *file)
 	int ret;
 	if (!c)
 		return -ENOMEM;
+	mutex_init(&c->display_lock);
 	v4l2_fh_init(&c->fh, video_devdata(file));
 	if (web_node(file)) {
 		c->avc = kcalloc(2, sizeof(*c->avc), GFP_KERNEL);
 		if (!c->avc) { v4l2_fh_exit(&c->fh); kfree(c); return -ENOMEM; }
+		memset(&c->stream, 0, sizeof(c->stream));
 		c->stream.last = -1;
 		c->check = c->avc + 1;
 	}

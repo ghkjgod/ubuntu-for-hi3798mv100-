@@ -71,93 +71,7 @@ static int read_se(struct bits *b)
 	u32 v = read_ue(b);
 	return v & 1 ? (int)((v + 1) / 2) : -(int)(v / 2);
 }
-struct slice_info {
-	bool predictive, reference;
-	unsigned int bits, qp, deblock, cabac_init;
-	int alpha, beta;
-};
-static int parse_slice(const struct vdh_picture *p, const u8 *data, size_t len,
-		       struct slice_info *sl)
-{
-	const struct v4l2_ctrl_h264_sps *s = p->sps;
-	const struct v4l2_ctrl_h264_pps *q = p->pps;
-	struct bits b = { .data = data, .size = len, .next = 1 };
-	u32 type, frame_num;
-	int qp;
-	bool idr = (data[0] & 31) == 5;
-	if (data[0] & 0x80 || (!idr && (data[0] & 31) != 1) ||
-	    (s->profile_idc != 66 && s->profile_idc != 77 && s->profile_idc != 100) || s->chroma_format_idc != 1 ||
-	    s->bit_depth_luma_minus8 || s->bit_depth_chroma_minus8 ||
-	    !(s->flags & V4L2_H264_SPS_FLAG_FRAME_MBS_ONLY) ||
-	    s->max_num_ref_frames > 1 || s->log2_max_frame_num_minus4 > 12 ||
-	    s->log2_max_pic_order_cnt_lsb_minus4 > 12 || s->pic_order_cnt_type > 2 ||
-	    q->num_slice_groups_minus1 ||
-	    (q->flags & (V4L2_H264_PPS_FLAG_WEIGHTED_PRED |
-			 V4L2_H264_PPS_FLAG_SCALING_MATRIX_PRESENT)))
-		return -EOPNOTSUPP;
-	if (read_ue(&b))
-		return -EOPNOTSUPP;
-	type = read_ue(&b);
-	if (type > 9 || (type % 5 != 0 && type % 5 != 2) ||
-	    (idr && type % 5 != 2) || read_ue(&b) != q->pic_parameter_set_id)
-		return -EINVAL;
-	sl->predictive = type % 5 == 0;
-	sl->reference = (data[0] & 0x60) != 0;
-	frame_num = get_bits(&b, 4 + s->log2_max_frame_num_minus4);
-	if (frame_num != p->decode->frame_num)
-		return -EINVAL;
-	if (idr)
-		read_ue(&b);
-	if (s->pic_order_cnt_type == 0) {
-		get_bits(&b, 4 + s->log2_max_pic_order_cnt_lsb_minus4);
-		if (q->flags & V4L2_H264_PPS_FLAG_BOTTOM_FIELD_PIC_ORDER_IN_FRAME_PRESENT)
-			read_se(&b);
-	} else if (s->pic_order_cnt_type == 1 &&
-		   !(s->flags & V4L2_H264_SPS_FLAG_DELTA_PIC_ORDER_ALWAYS_ZERO)) {
-		read_se(&b);
-		if (q->flags & V4L2_H264_PPS_FLAG_BOTTOM_FIELD_PIC_ORDER_IN_FRAME_PRESENT)
-			read_se(&b);
-	}
-	if (q->flags & V4L2_H264_PPS_FLAG_REDUNDANT_PIC_CNT_PRESENT)
-		if (read_ue(&b))
-			return -EOPNOTSUPP;
-	if (sl->predictive) {
-		u32 refs = get_bits(&b, 1) ? read_ue(&b) : q->num_ref_idx_l0_default_active_minus1;
-		if (refs || get_bits(&b, 1))
-			return -EOPNOTSUPP;
-	}
-	if (sl->reference) {
-		if (idr) {
-			get_bits(&b, 1);
-			if (get_bits(&b, 1))
-				return -EOPNOTSUPP;
-		} else if (get_bits(&b, 1)) {
-			return -EOPNOTSUPP;
-		}
-	}
-	if (sl->predictive && (q->flags & V4L2_H264_PPS_FLAG_ENTROPY_CODING_MODE)) {
-		sl->cabac_init = read_ue(&b);
-		if (sl->cabac_init > 2)
-			return -EINVAL;
-	}
-	qp = 26 + q->pic_init_qp_minus26 + read_se(&b);
-	if (qp < 0 || qp > 51)
-		return -EINVAL;
-	sl->qp = qp;
-	if (q->flags & V4L2_H264_PPS_FLAG_DEBLOCKING_FILTER_CONTROL_PRESENT) {
-		sl->deblock = read_ue(&b);
-		if (sl->deblock != 1) {
-			sl->alpha = read_se(&b);
-			sl->beta = read_se(&b);
-		}
-	}
-	if (b.bad || sl->deblock > 2 || abs(sl->alpha) > 6 || abs(sl->beta) > 6)
-		return -EINVAL;
-	sl->bits = b.next * 8 - b.left;
-	if (q->flags & V4L2_H264_PPS_FLAG_ENTROPY_CODING_MODE)
-		sl->bits = ALIGN(sl->bits, 8);
-	return sl->bits < len * 8 ? 0 : -EINVAL;
-}
+#include "vdh-avc-slice.inc"
 static void free_surface(void *data)
 {
 	struct vdh_surface *s = data;
@@ -201,7 +115,7 @@ static int allocate_stream(struct vdh_hw *hw)
 		return -ENOMEM;
 	if (!IS_ALIGNED(hw->dma, 1024) || upper_32_bits(hw->dma + hw->layout.arena_size - 1))
 		return -ERANGE;
-	for (i = 0; i < ARRAY_SIZE(hw->surfaces); i++) {
+	for (i = 0; i < 2; i++) {
 		struct vdh_surface *s = &hw->surfaces[i];
 		s->dev = dev;
 		s->size = hw->layout.recon_size;
@@ -226,6 +140,8 @@ static int allocate_stream(struct vdh_hw *hw)
 		if (!s->coherent)
 			dma_sync_single_for_device(dev, s->dma, hw->layout.recon_size, DMA_BIDIRECTIONAL);
 	}
+	for (i = 0; i < 2; i++)
+		hw->pmv_dma[i] = hw->dma + hw->layout.pmv + i * hw->layout.pmv_size;
 	dev_dbg(hw->dev, "stream arena %u recon %u coherent %d/%d\n", hw->layout.arena_size, hw->layout.recon_size, hw->surfaces[0].coherent, hw->surfaces[1].coherent);
 	memset(hw->mem, 0, hw->layout.arena_size);
 	memcpy(hw->mem + CABAC, hw->h264_cabac, sizeof(hw->h264_cabac));
@@ -250,7 +166,18 @@ void vdh_stop_stream(struct vdh_hw *hw)
 {
 	if (hw->wedged)
 		return;
-	devres_release_group(hw->dev, hw->surfaces);
+	for (unsigned int i = 2; i < VDH_AVC_SLOTS; i++) {
+        struct vdh_surface *s = &hw->surfaces[i];
+        if (hw->extra_pmv[i])
+            dma_free_coherent(hw->dev, hw->layout.pmv_size, hw->extra_pmv[i], hw->pmv_dma[i]);
+        if (s->cpu) {
+            if (s->coherent) dma_free_coherent(hw->dev, s->size, s->cpu, s->dma);
+            else free_surface(s);
+        }
+        memset(s, 0, sizeof(*s));
+        hw->extra_pmv[i] = NULL;
+    }
+    devres_release_group(hw->dev, hw->surfaces);
 	hw->mem = NULL;
 }
 static void copy_capture(u8 *dest, const u8 *src, u32 w, u32 h, u32 uv)
@@ -367,16 +294,68 @@ static int finish_picture(struct vdh_hw *hw, const struct vdh_picture *p,
 		dma_sync_single_for_device(hw->dev, hw->surfaces[dst].dma, uv + stride * ALIGN(height, 16)/2, DMA_BIDIRECTIONAL);
 	return 0;
 }
+/* Reference surfaces and their colocated motion vectors live until STREAMOFF. */
+static int ensure_avc_slot(struct vdh_hw *hw, unsigned int slot)
+{
+	struct vdh_surface *s = &hw->surfaces[slot];
+	if (slot < 2 || (s->cpu && hw->extra_pmv[slot])) return 0;
+	s->dev = hw->dev;
+	s->size = hw->layout.recon_size;
+	if (!s->cpu) {
+		s->cpu = dma_alloc_noncoherent(s->dev, s->size, &s->dma, DMA_BIDIRECTIONAL,
+					       GFP_KERNEL | __GFP_NOWARN);
+		if (!s->cpu) {
+			s->cpu = dma_alloc_coherent(s->dev, s->size, &s->dma, GFP_KERNEL);
+			s->coherent = true;
+		}
+		if (!s->cpu) return -ENOMEM;
+		if (!s->coherent)
+			dma_sync_single_for_cpu(s->dev, s->dma, s->size, DMA_BIDIRECTIONAL);
+		memset(s->cpu, 0, s->size);
+		if (!s->coherent)
+			dma_sync_single_for_device(s->dev, s->dma, s->size, DMA_BIDIRECTIONAL);
+	}
+	hw->extra_pmv[slot] = dma_alloc_coherent(s->dev, hw->layout.pmv_size,
+						 &hw->pmv_dma[slot], GFP_KERNEL);
+	if (!hw->extra_pmv[slot]) return -ENOMEM;
+	if (!IS_ALIGNED(s->dma, 1024) || !IS_ALIGNED(hw->pmv_dma[slot], 16)) return -ERANGE;
+	return 0;
+}
+static void commit_avc_ref(struct vdh_stream *st, const struct avc_slice *sl,
+			   unsigned int dst, const struct vdh_picture *p)
+{
+	int i, used = 0, oldest = -1, min_num = INT_MAX;
+	int max_frame = 1 << (4 + p->sps->log2_max_frame_num_minus4);
+	if (!sl->reference) return;
+	for (i = 0; i < sl->removals; i++) st->refs[sl->remove[i]].valid = false;
+	for (i = 0; i < VDH_AVC_SLOTS; i++) {
+		int n;
+		if (!st->refs[i].valid) continue;
+		used++;
+		n = wrapped_frame(&st->refs[i], sl->frame, max_frame);
+		if (n < min_num) { oldest = i; min_num = n; }
+	}
+	if (!sl->adaptive && oldest >= 0 && used >= p->sps->max_num_ref_frames)
+		st->refs[oldest].valid = false;
+	st->refs[dst] = (struct vdh_reference) {
+		.valid = true, .frame_num = sl->frame, .poc = sl->poc, .timestamp = p->timestamp,
+	};
+	st->last = dst;
+	st->timestamp = p->timestamp;
+	st->poc = sl->poc;
+	st->prev_poc_msb = sl->poc_msb;
+	st->prev_poc_lsb = sl->poc_lsb;
+}
 int vdh_picture(struct vdh_hw *hw, struct vdh_stream *stream, const struct vdh_picture *p)
 {
 	const u8 *data = p->data;
 	size_t len = p->bytes;
-	struct slice_info sl = {};
+	struct avc_slice sl = {};
 	u32 width = p->width, height = p->height;
 	u32 mbs = width * height / 256;
 	u32 *pic = (u32 *)(hw->mem + PIC), *slice = (u32 *)(hw->mem + SLICE);
 	u32 *up = (u32 *)(hw->mem + UP), base = (u32)hw->dma;
-	unsigned int i, dst, ref;
+	unsigned int i, dst, list;
 	int ret;
 	if (hw->wedged)
 		return -EIO;
@@ -398,25 +377,27 @@ int vdh_picture(struct vdh_hw *hw, struct vdh_stream *stream, const struct vdh_p
 	if (ret < 0)
 		return ret;
 	len = ret;
-	ret = parse_slice(p, hw->mem + NAL, len, &sl);
-	if (ret)
-		return ret;
-	if (sl.predictive) {
-		unsigned int refs = 0;
-		for (i = 0; i < ARRAY_SIZE(p->decode->dpb); i++) {
-			const struct v4l2_h264_dpb_entry *e = &p->decode->dpb[i];
-			if (!(e->flags & V4L2_H264_DPB_ENTRY_FLAG_ACTIVE))
-				continue;
-			if (e->reference_ts != stream->timestamp || stream->last < 0 ||
-			    (e->flags & (V4L2_H264_DPB_ENTRY_FLAG_LONG_TERM | V4L2_H264_DPB_ENTRY_FLAG_FIELD)))
-				return -EINVAL;
-			refs++;
+	if ((data[0] & 31) == 5)
+		memset(stream->refs, 0, sizeof(stream->refs));
+	if (!p->stateful && (data[0] & 31) != 5) {
+		unsigned int j;
+		for (i = 0; i < VDH_AVC_SLOTS; i++) {
+			if (!stream->refs[i].valid) continue;
+			for (j = 0; j < ARRAY_SIZE(p->decode->dpb); j++) {
+				const struct v4l2_h264_dpb_entry *e = &p->decode->dpb[j];
+				if ((e->flags & V4L2_H264_DPB_ENTRY_FLAG_ACTIVE) &&
+				    e->reference_ts == stream->refs[i].timestamp) break;
+			}
+			if (j == ARRAY_SIZE(p->decode->dpb)) stream->refs[i].valid = false;
 		}
-		if (refs != 1)
-			return -EINVAL;
 	}
-	dst = stream->last == 0 ? 1 : 0;
-	ref = sl.predictive ? stream->last : dst;
+	ret = parse_slice(p, stream, hw->mem + NAL, len, &sl);
+	if (ret) return ret;
+	for (dst = 0; dst < VDH_AVC_SLOTS; dst++)
+		if (!stream->refs[dst].valid) break;
+	if (dst == VDH_AVC_SLOTS) return -EINVAL;
+	ret = ensure_avc_slot(hw, dst);
+	if (ret) return ret;
 	memset(up, 0, 1024);
 	memset(pic, 0, 1024);
 	memset(slice, 0, 1024);
@@ -434,36 +415,63 @@ int vdh_picture(struct vdh_hw *hw, struct vdh_stream *stream, const struct vdh_p
 	if (p->pps->flags & V4L2_H264_PPS_FLAG_CONSTRAINED_INTRA_PRED)
 		pic[0] |= BIT(26);
 	pic[1] = hw->surfaces[dst].dma;
-	pic[2] = min(p->decode->top_field_order_cnt, p->decode->bottom_field_order_cnt);
+	pic[2] = sl.poc;
 	pic[5] = base + hw->layout.sed; pic[6] = base + hw->layout.pmv_top;
-	pic[7] = base + hw->layout.pmv + dst * hw->layout.pmv_size; pic[8] = base + hw->layout.rcn;
+	pic[7] = hw->pmv_dma[dst]; pic[8] = base + hw->layout.rcn;
 	pic[9] = base + SLICE;
-	for (i = 0; i < 16; i++)
-		pic[10+i] = hw->surfaces[ref].dma;
+	for (i = 0; i < 16; i++) {
+		bool used = i < VDH_AVC_SLOTS && stream->refs[i].valid;
+		pic[10+i] = hw->surfaces[used ? i : dst].dma;
+		if (used) pic[27+2*i] = pic[28+2*i] = stream->refs[i].poc;
+	}
 	pic[26] = base + CABAC;
-	if (sl.predictive)
-		pic[27] = pic[28] = stream->poc;
 	pic[59] = base + hw->layout.dblk;
 	memset(&pic[64], 0x10, 224);
 	slice[0] = (sl.bits / 8) & ~15u;
 	slice[1] = sl.bits & 127;
 	slice[2] = len * 8 - sl.bits;
-	slice[6] = (sl.qp << 26) | (sl.cabac_init << 24);
-	slice[7] = sl.predictive ? 5 : 0;
+	slice[6] = ((u32)sl.qp << 26) | ((u32)sl.cabac << 24);
+	slice[7] = sl.type == 2 ? 0 : sl.type == 1 ? 2 : 1;
+	for (list = 0; list < 2; list++) {
+		if (sl.active[list]) {
+			slice[7] |= (u32)sl.active[list] << (list ? 8 : 2);
+			slice[7] |= (u32)(sl.active[list] - 1) << (list ? 21 : 16);
+		}
+		for (i = 0; i < sl.active[list]; i++) {
+			u32 slot = sl.list[list][i];
+			slice[20 + list*8 + i/4] |= (slot*2) << (5*(i%4));
+			slice[64 + list*32 + i] = sl.weights[list][0][i];
+			slice[128 + list*32 + i] = sl.weights[list][1][i];
+			slice[192 + list*32 + i] = sl.weights[list][2][i];
+		}
+	}
+	if (sl.type == 1) {
+		u32 slot;
+		slice[8] = hw->pmv_dma[sl.list[1][0]];
+		if (sl.direct) slice[7] |= BIT(15);
+		for (slot = 0; slot < VDH_AVC_SLOTS; slot++) {
+			for (i = 0; i < sl.active[0]; i++)
+				if (sl.list[0][i] == slot) break;
+			if (i < sl.active[0])
+				slice[36 + slot/2] |= (i | (i << 5)) << (10*(slot%2));
+		}
+	}
 	if (p->sps->flags & V4L2_H264_SPS_FLAG_DIRECT_8X8_INFERENCE)
 		slice[7] |= BIT(14);
 	slice[10] = (p->pps->second_chroma_qp_index_offset & 31) |
 		    ((p->pps->chroma_qp_index_offset & 31) << 5);
+	if (sl.type == 1)
+		slice[10] |= (u32)p->pps->weighted_bipred_idc << 16;
+	else if (!sl.type && (p->pps->flags & V4L2_H264_PPS_FLAG_WEIGHTED_PRED))
+		slice[10] |= BIT(16);
 	slice[11] = sl.deblock | ((sl.beta & 15) << 8) | ((sl.alpha & 15) << 16);
 	slice[44] = mbs - 1;
 	ret = finish_picture(hw, p, dst, mbs, false);
 	if (ret)
 		return ret;
-	if (sl.reference) {
-		stream->last = dst;
-		stream->timestamp = p->timestamp;
-		stream->poc = pic[2];
-	}
+	stream->output_poc = sl.poc;
+	stream->output_idr = sl.idr;
+	commit_avc_ref(stream, &sl, dst, p);
 	hw->frames++;
 	return 0;
 }

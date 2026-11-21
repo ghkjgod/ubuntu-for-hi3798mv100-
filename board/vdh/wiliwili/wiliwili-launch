@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+binary=/usr/libexec/wiliwili/wiliwili
+if [ "$(id -u)" -ne 0 ]; then
+    export LD_LIBRARY_PATH="/usr/libexec/wiliwili${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    if [ -x /usr/local/bin/histb-lima-run ]; then
+        exec /usr/local/bin/histb-lima-run "$binary" "$@"
+    fi
+    exec "$binary" "$@"
+fi
+
+# The shipped Xfce desktop auto-logs in as root. Run the network client as desktop.
+user=desktop
+uid=$(id -u "$user")
+gid=$(id -g "$user")
+display=${DISPLAY:-:0}
+install -d -m755 -o root -g root /run/wiliwili
+session=$(mktemp -d /run/wiliwili/session.XXXXXX)
+trap 'rm -f -- "$session/Xauthority"; rmdir -- "$session" 2>/dev/null || true' EXIT
+xauth -f "${XAUTHORITY:-/root/.Xauthority}" extract "$session/Xauthority" "$display"
+test -s "$session/Xauthority"
+chown "$uid:$gid" "$session" "$session/Xauthority"
+groups=$(id -G "$user" | tr ' ' ,)
+if [ -e /dev/dri/renderD128 ]; then groups="$groups,$(stat -c %g /dev/dri/renderD128)"; fi
+setpriv --reuid="$uid" --regid="$gid" --groups="$groups" --reset-env env \
+    DISPLAY="$display" XAUTHORITY="$session/Xauthority" XDG_RUNTIME_DIR="$session" \
+    LANG="${LANG:-C.UTF-8}" /usr/bin/wiliwili "$@"

@@ -1,0 +1,108 @@
+diff --git a/wiliwili/source/main.cpp b/wiliwili/source/main.cpp
+index 06f6e54..26c0d7f 100644
+--- a/wiliwili/source/main.cpp
++++ b/wiliwili/source/main.cpp
+@@ -20,9 +20,18 @@
+ #endif
+ 
+ int main(int argc, char* argv[]) {
++    std::string initialBvid;
+     for (int i = 1; i < argc; i++) {
+         if (std::strcmp(argv[i], "-d") == 0) {
+             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
++        } else if (std::strcmp(argv[i], "--bvid") == 0) {
++            if (++i == argc) return EXIT_FAILURE;
++            initialBvid = argv[i];
++            if (initialBvid.size() != 12 || initialBvid.compare(0, 2, "BV") != 0 ||
++                initialBvid.find_first_not_of("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") != std::string::npos) {
++                std::fprintf(stderr, "Expected a Bilibili BV identifier\n");
++                return EXIT_FAILURE;
++            }
+         } else if (std::strcmp(argv[i], "-v") == 0) {
+             brls::Application::enableDebuggingView(true);
+         } else if (std::strcmp(argv[i], "-t") == 0) {
+@@ -57,6 +66,7 @@ int main(int argc, char* argv[]) {
+ 
+     if (brls::Application::getPlatform()->isApplicationMode()) {
+         Intent::openMain();
++        if (!initialBvid.empty()) Intent::openBV(initialBvid);
+         // Uncomment these lines to debug activities
+         //        Intent::openBV("BV1Da411Y7U4");  // 弹幕防遮挡 (横屏)
+         //        Intent::openBV("BV1iN4y1m7J3");  // 弹幕防遮挡 (竖屏)
+diff --git a/wiliwili/source/utils/config_helper.cpp b/wiliwili/source/utils/config_helper.cpp
+index 3ff65de..6dfbf28 100644
+--- a/wiliwili/source/utils/config_helper.cpp
++++ b/wiliwili/source/utils/config_helper.cpp
+@@ -192,7 +192,7 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
+     {SettingItem::PLAYER_HIGHLIGHT_BAR, {"player_highlight_bar", {}, {}, 0}},
+     {SettingItem::PLAYER_SKIP_OPENING_CREDITS, {"player_skip_opening_credits", {}, {}, 1}},
+     {SettingItem::PLAYER_LOW_QUALITY, {"player_low_quality", {}, {}, 1}},
+-#if defined(IOS) || defined(__PSV__) || defined(__SWITCH__)
++#if (defined(__linux__) && defined(__arm__)) || defined(IOS) || defined(__PSV__) || defined(__SWITCH__)
+     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 1}},
+ #else
+     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 0}},
+@@ -698,7 +698,11 @@ void ProgramConfig::load() {
+ #endif
+ 
+     // 初始化FPS限制
++    #if defined(__linux__) && defined(__arm__)
++    int limitedFPS = getSettingItem(SettingItem::LIMITED_FPS, 30);
++#else
+     int limitedFPS = getSettingItem(SettingItem::LIMITED_FPS, 0);
++#endif
+     brls::Application::setLimitedFPS(limitedFPS);
+     VideoContext::swapInterval = limitedFPS == 0 ? getSettingItem(SettingItem::SWAP_INTERVAL, 1) : 0;
+ 
+diff --git a/wiliwili/source/view/mpv_core.cpp b/wiliwili/source/view/mpv_core.cpp
+index 64c96d6..10122d0 100644
+--- a/wiliwili/source/view/mpv_core.cpp
++++ b/wiliwili/source/view/mpv_core.cpp
+@@ -227,6 +227,11 @@ void MPVCore::on_update(void *self) {
+         }
+ #endif
+     });
++#if defined(__linux__) && defined(__arm__) && defined(__GLFW__)
++    // Wake the desktop event loop as soon as libmpv has a video frame.
++    glfwPostEmptyEvent();
++#endif
++
+ }
+ 
+ void MPVCore::on_wakeup(void *self) {
+@@ -356,6 +361,17 @@ void MPVCore::init() {
+     // hardware decoding
+     if (HARDWARE_DEC) {
+         mpvSetOptionString(mpv, "hwdec", PLAYER_HWDEC_METHOD.c_str());
++#if defined(__linux__) && defined(__arm__)
++        if (FILE *cap = std::fopen("/sys/devices/platform/mv100-vdh/avc_refusals", "r")) {
++            std::fclose(cap);
++            mpvSetOptionString(mpv, "video-timing-offset", "0.10");
++            mpvSetOptionString(mpv, "scale", "bilinear");
++            mpvSetOptionString(mpv, "cscale", "bilinear");
++            mpvSetOptionString(mpv, "dscale", "bilinear");
++            mpvSetOptionString(mpv, "vd", "h264_v4l2m2m,h264");
++            mpvSetOptionString(mpv, "scripts", "/usr/share/wiliwili/resources/mv100-vdh.lua");
++        }
++#endif
+         brls::Logger::info("MPV hardware decode: {}", PLAYER_HWDEC_METHOD);
+     } else {
+         mpvSetOptionString(mpv, "hwdec", "no");
+@@ -651,7 +667,7 @@ void MPVCore::initializeVideo() {
+ 
+     // set up vertex data (and buffer(s)) and configure vertex attributes
+     // ------------------------------------------------------------------
+-    unsigned int indices[] = {0, 1, 3, 1, 2, 3};
++    const GLushort indices[] = {0, 1, 3, 1, 2, 3};
+     glGenBuffers(1, &this->shader.vbo);
+     glBindBuffer(GL_ARRAY_BUFFER, this->shader.vbo);
+     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+@@ -882,7 +898,7 @@ void MPVCore::draw(brls::Rect area, float alpha) {
+     static GLint alphaID = glGetUniformLocation(shader.prog, "Alpha");
+     glUniform1f(alphaID, alpha);
+ 
+-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
++    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, nullptr);
+ #endif
+ }
+ 

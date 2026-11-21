@@ -33,9 +33,14 @@ def play(path):
     if codec not in ("h264", "hevc"):
         software(path, codec)
     if (stream.get("pix_fmt") not in ("yuv420p", "yuvj420p") or
-            stream.get("width", 0) > 1920 or stream.get("height", 0) > 1088 or
-            stream.get("has_b_frames", 0) or stream.get("refs", 1) > 1):
-        software(path, "outside the tested 8-bit single-reference I/P formats")
+            stream.get("width", 0) > 1920 or stream.get("height", 0) > 1088):
+        software(path, "outside the 8-bit 1920x1088 decoder format")
+    extended_avc = codec == "h264" and (STATS / "avc_refusals").exists()
+    if extended_avc:
+        if stream.get("refs", 1) > 8:
+            software(path, "more than eight H.264 references")
+    elif stream.get("has_b_frames", 0) or stream.get("refs", 1) > 1:
+        software(path, "requires single-reference I/P frames on this decoder")
     if not STATS.exists() or not shutil.which("gst-play-1.0"):
         software(path, "VDH player unavailable")
     decoder = "v4l2slh264dec" if codec == "h264" else "v4l2slh265dec"

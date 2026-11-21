@@ -2,6 +2,8 @@
 
 本更新适配 EC6108V9C 的 Ubuntu armhf、Linux `6.12.114-hi3798-mv100-exp` 与现有 Lima 浏览器环境。Xfce 中点击原来的 Chromium 图标即可。网页自身的 `<video>` 和 Media Source Extensions 播放器使用新增的 stateful V4L2 节点。Xfce 下按需打开一个 1280×720 的 Weston 窗口，让 Chromium 的 Wayland 后端把 NV12 图像交给 Mali450 合成。关闭最后一个浏览器进程后，Weston 自动退出。
 
+下表记录 Chromium 专项验收时的驱动版本。后续 H.264 B 帧扩展另在 wiliwili 上做了真机验证。[wiliwili 验收](../wiliwili/README.md)
+
 | 网页视频 | 已验证的行为 |
 | --- | --- |
 | H.264/AVC | 最高实测 1920×1080，编码尺寸最多 1920×1088。8 位 4:2:0、逐行、I/P、单个短期参考帧、每帧一个 slice。通过的样片报告 `V4L2VideoDecoder`。 |

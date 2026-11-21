@@ -55,6 +55,38 @@ static int se(struct reader *r, unsigned int max)
 	return v & 1 ? (int)(v + 1) / 2 : -(int)(v / 2);
 }
 
+/* Annex E: consume VUI fields up to the decoded-picture-buffer restriction. */
+static void skip_hrd(struct reader *r)
+{
+	u32 entries = ue(r, 31) + 1;
+	bits(r, 8);
+	while (entries--) {
+		ue(r, 65535); ue(r, 65535); bits(r, 1);
+	}
+	bits(r, 20);
+}
+static int reorder_limit(struct reader *r, const struct v4l2_ctrl_h264_sps *s)
+{
+	u32 limit = s->pic_order_cnt_type == 2 ? 0 : 16;
+	bool nal, vcl;
+	if (!bits(r, 1)) return limit;
+	if (bits(r, 1) && bits(r, 8) == 255) { bits(r, 16); bits(r, 16); }
+	if (bits(r, 1)) bits(r, 1);
+	if (bits(r, 1)) { bits(r, 4); if (bits(r, 1)) bits(r, 24); }
+	if (bits(r, 1)) { ue(r, 5); ue(r, 5); }
+	if (bits(r, 1)) { bits(r, 32); bits(r, 32); bits(r, 1); }
+	nal = bits(r, 1); if (nal) skip_hrd(r);
+	vcl = bits(r, 1); if (vcl) skip_hrd(r);
+	if (nal || vcl) bits(r, 1);
+	bits(r, 1);
+	if (bits(r, 1)) {
+		bits(r, 1);
+		ue(r, 16); ue(r, 16); ue(r, 16); ue(r, 16);
+		limit = ue(r, 16);
+		if (ue(r, 16) < limit) r->bad = true;
+	}
+	return limit;
+}
 static int sequence(struct mv100_avc *a, struct reader *r)
 {
 	struct v4l2_ctrl_h264_sps *s = &a->sps;
@@ -78,7 +110,7 @@ static int sequence(struct mv100_avc *a, struct reader *r)
 		s->log2_max_pic_order_cnt_lsb_minus4 = ue(r, 12);
 	else if (s->pic_order_cnt_type == 1)
 		return -EOPNOTSUPP;
-	s->max_num_ref_frames = ue(r, 1);
+	s->max_num_ref_frames = ue(r, VDH_AVC_SLOTS - 1);
 	if (bits(r, 1))
 		return -EOPNOTSUPP;
 	s->pic_width_in_mbs_minus1 = ue(r, VDH_MAX_W / 16 - 1);
@@ -98,6 +130,7 @@ static int sequence(struct mv100_avc *a, struct reader *r)
 			return -EOPNOTSUPP;
 		bottom = 2 * ue(r, h / 2);
 	}
+	a->reorder = reorder_limit(r, s);
 	if (r->bad || right >= w || bottom >= h)
 		return -EINVAL;
 	if (a->width && (a->width != w || a->height != h ||
@@ -132,7 +165,7 @@ static int picture_params(struct mv100_avc *a, struct reader *r)
 	if (ue(r, 7)) return -EOPNOTSUPP;
 	p->num_ref_idx_l0_default_active_minus1 = ue(r, 31);
 	p->num_ref_idx_l1_default_active_minus1 = ue(r, 31);
-	if (bits(r, 1)) return -EOPNOTSUPP;
+	if (bits(r, 1)) p->flags |= V4L2_H264_PPS_FLAG_WEIGHTED_PRED;
 	p->weighted_bipred_idc = bits(r, 2);
 	p->pic_init_qp_minus26 = se(r, 26);
 	p->pic_init_qs_minus26 = se(r, 26);
@@ -187,7 +220,7 @@ int mv100_avc_parse(struct mv100_avc *a, const u8 *data, size_t n,
 			unsigned int slice_type;
 			if (found || !a->has_sps || !a->has_pps || ue(&r, 0)) return -EINVAL;
 			slice_type = ue(&r, 9) % 5;
-			if (slice_type != 0 && slice_type != 2) return -EOPNOTSUPP;
+			if (slice_type > 2) return -EOPNOTSUPP;
 			if (ue(&r, 255) != a->pps.pic_parameter_set_id) return -EINVAL;
 			memset(&a->dec, 0, sizeof(a->dec));
 			a->dec.frame_num = bits(&r, a->sps.log2_max_frame_num_minus4 + 4);

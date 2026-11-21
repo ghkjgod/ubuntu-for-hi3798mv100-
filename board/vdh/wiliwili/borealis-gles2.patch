@@ -1,0 +1,22 @@
+--- a/library/lib/platforms/glfw/glfw_video.cpp
++++ b/library/lib/platforms/glfw/glfw_video.cpp
+@@ -334,6 +334,19 @@
+     glfwMakeContextCurrent(window);
+     // Load OpenGL routines using glad
+     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
++#ifdef USE_GLES2
++    // These are core GLES 2.0 calls. The bundled desktop GL loader only
++    // resolves them for GL 3.0, leaving null pointers on GLES 2.0 contexts.
++    glad_glGenFramebuffers = reinterpret_cast<decltype(glad_glGenFramebuffers)>(glfwGetProcAddress("glGenFramebuffers"));
++    glad_glBindFramebuffer = reinterpret_cast<decltype(glad_glBindFramebuffer)>(glfwGetProcAddress("glBindFramebuffer"));
++    glad_glFramebufferTexture2D = reinterpret_cast<decltype(glad_glFramebufferTexture2D)>(glfwGetProcAddress("glFramebufferTexture2D"));
++    glad_glCheckFramebufferStatus = reinterpret_cast<decltype(glad_glCheckFramebufferStatus)>(glfwGetProcAddress("glCheckFramebufferStatus"));
++    glad_glDeleteFramebuffers = reinterpret_cast<decltype(glad_glDeleteFramebuffers)>(glfwGetProcAddress("glDeleteFramebuffers"));
++    if (!glGenFramebuffers || !glBindFramebuffer || !glFramebufferTexture2D ||
++        !glCheckFramebufferStatus || !glDeleteFramebuffers) {
++        brls::fatal("Missing GLES2 framebuffer entry points");
++    }
++#endif
+ 
+     Logger::info("glfw: GL Vendor: {}", (const char*)glGetString(GL_VENDOR));
+     Logger::info("glfw: GL Renderer: {}", (const char*)glGetString(GL_RENDERER));

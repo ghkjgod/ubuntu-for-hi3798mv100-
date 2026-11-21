@@ -4,12 +4,15 @@ EC6108V9C 的 VDH V300R001 可以在本项目 Linux 6.12.114 armhf 上通过 V4L
 
 | 视频流 | 在这台盒子上的播放路径 |
 | --- | --- |
-| H.264 Baseline、Main、High；H.265/HEVC Main | 已验证 8 位 4:2:0、逐行、每帧单 slice、I/P 帧、单个短期参考帧。当前编码尺寸上限 1920×1088，含可见画面 1920×1080。 |
-| B 帧、多参考帧、10 位、超出尺寸、加权预测等 | 能从流信息辨认的直接交给 FFplay。解码过程中 VDH 拒绝的流由 FFplay 从头重播。HEVC tiles、WPP、自定义缩放矩阵也走软件。 |
+| H.264 Baseline、Main、High | 8 位 4:2:0、逐行、每帧单 slice。支持 I/P/B、短期多参考、P 帧显式加权以及 B 帧隐式双向加权。驱动最多保留 8 个短期参考帧；真实 B 站编码验证到 6 个。 |
+| H.265/HEVC Main | 已验证 I/P、单个短期参考帧、逐行、每帧单 slice。两种编码的尺寸上限均为 1920×1088，含可见 1920×1080。 |
+| 超出适配范围 | 10 位、隔行、自定义缩放矩阵、长期参考、H.264 多 slice 以及 HEVC B 帧、tiles、WPP 等走软件。H.264 自适应参考标记仅实现释放短期参考（MMCO 1）。 |
 | MPEG-1/2、MPEG-4 Part 2、VC-1、VP6/VP8、AVS/AVS+、MVC、H.263 基线 | 芯片资料列有这些格式。本模块尚无相应 V4L2 硬件后端，本地播放通过 FFmpeg，具体 profile 取决于已安装的 FFmpeg。 |
 | VP9、AV1 | 海思规格表未列为硬解格式。已用两段 WebM 在盒子上验证 FFplay 软件播放。 |
 
 芯片资料给出的整体上限是 4K×2K@30。当前模块只开放上表中通过验证的 H.264 和 HEVC 子集，4K 视频交给软件，流畅度取决于码流和 CPU。HDMI 输出模式独立于视频解码尺寸。VDH 负责解码，CPU 将其分块图像整理为线性 NV12，Mali450 负责桌面图形。[海思规格表，第 1 页](https://www.silicondevice.com/file.upload/images/Gid1563Pdf_Hi3798MV100.pdf)
+
+wiliwili 的定制 armhf 客户端通过 stateful V4L2 使用同一 VDH。两档 B 站 H.264 原片已完成带音轨、跳转及逐帧测试。[客户端与复测](wiliwili/README.md)
 
 ## SSH 安装与回退
 
