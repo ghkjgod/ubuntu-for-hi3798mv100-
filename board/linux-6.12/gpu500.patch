@@ -1,0 +1,36 @@
+--- a/drivers/clk/hisilicon/clk-hi3798mv100-gpu.c
++++ b/drivers/clk/hisilicon/clk-hi3798mv100-gpu.c
+@@ -33,8 +33,7 @@
+ 	unsigned long best = 200000000, delta = ULONG_MAX;
+ 	unsigned int i;
+ 
+-	/* Only the 200..400 MHz operating range is offered for daily use. */
+-	for (i = 1; i <= 6; i++) {
++	for (i = 0; i < ARRAY_SIZE(gpu_rates); i++) {
+ 		unsigned long d = rate > gpu_rates[i] ? rate - gpu_rates[i] : gpu_rates[i] - rate;
+ 
+ 		if (d < delta) {
+@@ -53,10 +52,10 @@
+ 	unsigned int sel;
+ 	int ret;
+ 
+-	for (sel = 1; sel <= 6; sel++)
++	for (sel = 0; sel < ARRAY_SIZE(gpu_rates); sel++)
+ 		if (gpu_rates[sel] == rate)
+ 			break;
+-	if (sel > 6)
++	if (sel == ARRAY_SIZE(gpu_rates))
+ 		return -EINVAL;
+ 	if (mv100_gpu_recalc(hw, parent) == rate)
+ 		return 0;
+--- a/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima.dts
++++ b/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima.dts
+@@ -10,6 +10,8 @@
+         opp-345600000 { opp-hz = /bits/ 64 <345600000>; };
+         opp-375000000 { opp-hz = /bits/ 64 <375000000>; };
+         opp-400000000 { opp-hz = /bits/ 64 <400000000>; };
++        opp-432000000 { opp-hz = /bits/ 64 <432000000>; };
++        opp-500000000 { opp-hz = /bits/ 64 <500000000>; };
+     };
+ };
+ &gpu {

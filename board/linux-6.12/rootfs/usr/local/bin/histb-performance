@@ -33,7 +33,9 @@ esac
 set -- $(cat "$gpu/available_frequencies" | tr ' ' '\n' | sed '/^$/d' | sort -n)
 test "$#" -gt 0
 floor=$1
-for ceiling do :; done
+for ceiling do
+    if [ "$ceiling" = 432000000 ]; then floor=$ceiling; fi
+done
 if [ "$mode" = full ]; then floor=$ceiling; fi
 cat "$cpu/cpuinfo_max_freq" >"$cpu/scaling_max_freq"
 cat "$cpu/cpuinfo_min_freq" >"$cpu/scaling_min_freq"

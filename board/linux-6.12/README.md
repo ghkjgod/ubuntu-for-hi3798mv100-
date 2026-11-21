@@ -87,3 +87,33 @@ systemctl reboot
 若无法进入系统，用台架保存的 stock-boot.bin 执行同样的 TFTP 内存引导。此恢复镜像来自该设备原 p6，长度 10862647，RAM CRC32 为 82cc9922。以原 bootargs 启动后，仍从原 p9 进入 Ubuntu，再执行上述 restore。该网口恢复路径已在真机演练到 4.4 桌面和 SSH。台架离线目录为 E:\build\lab\kernel-612114，保存 stock-p6.bin、stock-boot.bin 和设备专用工具。本次追加的完整设备专用恢复目录位于 E:\build\lab\kernel-612114-recovery-final，含完整性清单及维护脚本所需的历史内核文件。保持原 U-Boot 的持久 bootcmd。
 
 在此图形环境上安装网页 H.264 解码器及对应 Chromium 后端，可以继续使用原 Xfce 浏览器图标。[网页视频更新](../vdh/chromium/README.md)
+
+### 这台 QFP216 的动态 GPU 升级
+
+GPU 支持 `simple_ondemand` 在 432 与 500 MHz 间随负载切换，CPU 使用 `schedutil`，标称上限 1.0 GHz。板级升级包包含带原有 HDMI 适配的 uImage、性能策略与本机 p6 的维护工具。[实测频率与稳定性](../../evidence/cpu-gpu-clocks-20261121.md) · [GPU 升级包](../../release/hi3798mv100-gpu500.tar.gz)
+
+在原有 Linux 6.12.114 和 SSH 配置工作的这台盒子上，将压缩包复制到 `/run`。以 root 执行以下命令。网络传输只包含压缩后的内核和两个小文件，安装程序校验设备身份、已有恢复文件与原内核，只写并回读 p6 中可能发生变化的前缀。
+
+```sh
+set -eu
+mkdir -p /run/histb-gpu
+tar -xzf /run/hi3798mv100-gpu500.tar.gz -C /run/histb-gpu
+cd /run/histb-gpu
+sha256sum -c SHA256SUMS
+rec=/var/lib/histb-kernel-recovery
+install -m644 gpu-uImage "$rec/gpu-uImage.new"
+mv "$rec/gpu-uImage.new" "$rec/gpu-uImage"
+python3 display-slot.py audit
+install -m644 display-slot.py "$rec/display-slot-gpu.py.new"
+mv "$rec/display-slot-gpu.py.new" "$rec/display-slot-gpu.py"
+install -m755 histb-performance /usr/local/bin/.histb-performance.new
+mv /usr/local/bin/.histb-performance.new /usr/local/bin/histb-performance
+python3 "$rec/display-slot-gpu.py" install-gpu
+/usr/local/bin/histb-performance balanced
+sync
+systemctl reboot
+```
+
+重连 SSH 后用 `histb-performance status` 查看实际策略。回到先前的 400 MHz HDMI 内核，在同一台盒子上执行 `python3 /var/lib/histb-kernel-recovery/display-slot-gpu.py install`，然后 `systemctl reboot`。恢复后相同的性能脚本会使用旧内核公布的频率范围。
+
+按上方的完整构建步骤加入环境变量 `MV100_GPU500=1`，再用 `sh board/linux-6.12/package-gpu.sh BUILD/package/uImage hi3798mv100-gpu500.tar.gz` 重建本次增量包。

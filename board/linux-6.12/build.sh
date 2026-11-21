@@ -23,6 +23,9 @@ patch -s -d source -p1 <"$here/board.patch"
 patch -s -d source -p1 <"$here/display-modes.patch"
 patch -s -d source -p1 <"$here/irq-timing.patch"
 patch -s -d source -p1 <"$here/pcm-drain.patch"
+if [[ ${MV100_GPU500:-0} == 1 ]]; then
+    patch -s -d source -p1 <"$here/gpu500.patch"
+fi
 if test -f "${INPUT_CACHE:-/nonexistent}/upstream-v6.12.114-crg.c"; then
     cp "$INPUT_CACHE/upstream-v6.12.114-crg.c" .
 else

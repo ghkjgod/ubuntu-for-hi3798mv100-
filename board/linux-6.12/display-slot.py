@@ -29,7 +29,7 @@ def validate_image(image):
     require(zlib.crc32(header) == hcrc and zlib.crc32(image[64:]) == dcrc, 'uImage CRC mismatch')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('operation', choices=['audit', 'install', 'restore'])
+parser.add_argument('operation', choices=['audit', 'install', 'install-gpu', 'restore'])
 args = parser.parse_args()
 require(os.geteuid() == 0 and slot.is_block_device(), 'Expected root on the target board')
 require((sysblock/'mmcblk0/device/cid').read_text().strip() == '110100303038473330009474d3adc483', 'Unexpected eMMC identity')
@@ -61,22 +61,37 @@ require(sha(audio_image) == 'a9af93cb5c1e9697aebb9db7fdb5275b80242fa686462515c33
 validate_image(audio_image)
 audio = audio_image + previous[len(audio_image):]
 replacement = candidate + previous[len(candidate):]
+known = [previous, prior, last, audio, replacement]
+gpu_file = recovery / 'gpu-uImage'
+gpu_image = b''
+if gpu_file.exists():
+    gpu_image = gpu_file.read_bytes()
+    require(sha(gpu_image) == '83183897bd65da844ad0eb7433b4a55b785de174fda4a240156689344d7b05ce',
+            'GPU kernel hash mismatch')
+    validate_image(gpu_image)
+    require(len(gpu_image) <= len(stock), 'GPU kernel exceeds partition')
+    known.append(gpu_image + replacement[len(gpu_image):])
 with (slot.open('rb', buffering=0) if args.operation == 'audit' else slot.open('r+b', buffering=0)) as target:
     fcntl.flock(target, fcntl.LOCK_EX)
     current = target.read()
-    require(current in (previous, prior, last, audio, replacement), 'The current kernel partition is unknown')
-    print('geometry',geometry,'current',sha(current),'candidate',candidate_hash, flush=True)
+    require(current in known, 'The current kernel partition is unknown')
+    print('geometry', geometry, 'current', sha(current), 'display-image', candidate_hash, flush=True)
+    if gpu_image:
+        print('gpu-image', sha(gpu_image), flush=True)
     if args.operation == 'audit':
         raise SystemExit(0)
     wanted = replacement if args.operation == 'install' else previous
+    if args.operation == 'install-gpu':
+        require(bool(gpu_image), 'Stage the verified gpu-uImage first')
+        wanted = known[-1]
     if current == wanted:
         print('Already installed')
         raise SystemExit(0)
-    if args.operation == 'install':
+    if args.operation in ('install', 'install-gpu'):
         require(os.uname().release == '6.12.114-hi3798-mv100-exp' and Path('/sys/class/drm/card0-HDMI-A-1').exists(), 'Run the RAM trial first')
     target.seek(0)
     # Both known partition states have identical bytes after this prefix.
-    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image))
+    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image), len(gpu_image))
     written = target.write(wanted[:length])
     os.fsync(target.fileno())
     require(written == length, 'Short kernel write, keep the board running')
