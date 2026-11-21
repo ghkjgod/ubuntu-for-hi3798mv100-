@@ -1,6 +1,6 @@
 # Chromium 网页 H.264 硬解
 
-本更新适配 EC6108V9C 的 Ubuntu armhf、Linux `6.12.114-hi3798-mv100-exp` 与现有 Lima 浏览器环境。Xfce 中点击原来的 Chromium 图标即可。网页自身的 `<video>` 和 Media Source Extensions 播放器使用新增的 stateful V4L2 节点。Xfce 下按需打开一个 1280×720 的 Weston 窗口，让 Chromium 的 Wayland 后端把 NV12 图像交给 Mali450 合成。关闭最后一个浏览器进程后，Weston 自动退出。
+本更新适配 EC6108V9C 的 Ubuntu armhf、Linux `6.12.114-hi3798-mv100-exp` 与现有 Lima 浏览器环境。Xfce 的 Chromium 图标默认启动普通 X11 窗口。下文的可选网页硬解模式使用独立的 Chromium 156。网页自身的 `<video>` 和 Media Source Extensions 播放器使用新增的 stateful V4L2 节点。Xfce 下按需打开一个 1280×720 的 Weston 窗口，让 Chromium 的 Wayland 后端把 NV12 图像交给 Mali450 合成。关闭最后一个浏览器进程后，Weston 自动退出。
 
 下表记录 Chromium 专项验收时的驱动版本。后续 H.264 B 帧扩展另在 wiliwili 上做了真机验证。[wiliwili 验收](../wiliwili/README.md)
 
@@ -23,6 +23,8 @@ ssh "$BOX" 'mkdir -p /root/histb-updates /root/histb-updates/incoming'
 scp -r web-vdh.tar.gz web-debs vdh-tables "$BOX":/root/histb-updates/incoming/
 ssh "$BOX" 'set -e; cd /root/histb-updates; tar xzf incoming/web-vdh.tar.gz; bash board/vdh/install.sh --from-dir incoming/vdh-tables; bash board/vdh/chromium/install.sh incoming/web-debs'
 ```
+
+安装器保留已有启动方式。新镜像默认 X11。需要启用 Weston 网页硬解时，先退出 Chromium，再通过 SSH 执行 `install -m 644 /dev/null /etc/histb/chromium-vdh.enabled`；下次点击原图标即使用硬解入口。
 
 版本固定为 Raspberry Pi OS Bookworm armhf 的 `1:156.0.8078.79-1~deb12u1+rpt1`。三个包的哈希取自其签名索引。管理端和盒子分别校验哈希，盒子再核对包名、版本和架构。它们独立安装在 eMMC 的 `/opt/histb-webvideo`，使用现有 Debian 运行库。首次安装将旧用户配置复制到 `/home/desktop/.config/chromium-vdh`。两个浏览器之后各自保存设置。桌面仍使用独立用户运行 Chromium。[包校验清单](SHA256SUMS) · [Raspberry Pi OS 软件源](https://archive.raspberrypi.com/debian/pool/main/c/chromium/)
 

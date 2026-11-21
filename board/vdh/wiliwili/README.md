@@ -1,6 +1,6 @@
 # 在 Hi3798MV100 上用 wiliwili 播放 B 站 H.264
 
-适用 EC6108V9C、Ubuntu 24.04 armhf、内核 `6.12.114-hi3798-mv100-exp`。菜单启动 wiliwili，保持播放器的硬件解码开启，选用 AVC/H.264 视频。客户端自动选择海思 VDH。已在实际 B 站 720p 和 1080p 带 B 帧的视频上验证。登录状态和站点策略会影响客户端可选清晰度。[真机验收和掉帧记录](../../../evidence/wiliwili-vdh-bframes.md)
+适用 EC6108V9C、Ubuntu 24.04 armhf、内核 `6.12.114-hi3798-mv100-exp`。安装配套桌面配置后，下次 Xfce 登录会在桌面建立 wiliwili 图标，指向软件包随附的启动器。双击图标或从菜单启动 wiliwili，保持播放器的硬件解码开启，选用 AVC/H.264 视频。客户端自动选择海思 VDH。已在实际 B 站 720p 和 1080p 带 B 帧的视频上验证。登录状态和站点策略会影响客户端可选清晰度。[真机验收和掉帧记录](../../../evidence/wiliwili-vdh-bframes.md)
 
 ## 通过 SSH 安装
 

@@ -8,6 +8,14 @@ export XMODIFIERS=@im=$im GTK_IM_MODULE=$im QT_IM_MODULE=$im
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
     exec dbus-run-session -- "$0"
 fi
+entry=/usr/share/applications/cn.xfangfang.wiliwili.desktop
+if [ -f "$entry" ]; then
+    desktop=$(xdg-user-dir DESKTOP 2>/dev/null) || desktop="$HOME/Desktop"
+    if [ -n "$desktop" ] && [ "$desktop" != "$HOME" ] &&
+       [ ! -e "$desktop/wiliwili.desktop" ] && [ ! -L "$desktop/wiliwili.desktop" ]; then
+        mkdir -p "$desktop" && ln -s "$entry" "$desktop/wiliwili.desktop"
+    fi
+fi
 xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
 if [ "$im" = fcitx ]; then
     config=${XDG_CONFIG_HOME:-$HOME/.config}/fcitx

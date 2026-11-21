@@ -48,5 +48,8 @@ install -m 644 "$here/histb-chromium-display.service" /etc/systemd/system/
 systemctl daemon-reload
 install -m 755 "$launcher" /usr/local/bin/.histb-chromium.new
 mv -fT /usr/local/bin/.histb-chromium.new /usr/local/bin/histb-chromium
-install -m 644 /dev/null /etc/histb/chromium-vdh.enabled
-printf '%s\n' 'Chromium web video enabled. Launch Chromium from Xfce.'
+if [[ -f /etc/histb/chromium-vdh.enabled ]]; then
+    printf '%s\n' 'Chromium web video installed. The desktop launcher uses Weston.'
+else
+    printf '%s\n' 'Chromium web video installed. The desktop launcher uses native X11.'
+fi

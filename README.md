@@ -8,7 +8,7 @@ LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构�
 
 ## Chromium 图形与视频
 
-安装网页视频更新后，Xfce 的 Chromium 156 可以调用海思 VDH 播放符合条件的 H.264。已在 HTML 视频和 Media Source Extensions 分段播放中验收，网页图形由 Mali450 加速。该版浏览器已验收 8 位、逐行、单 slice、单参考帧的 I/P 码流。网站实际下发的编码决定能否启用。旧归档中的 Debian Chromium 150 继续作为回退入口。[通过 SSH 安装或回退](board/vdh/chromium/README.md) · [网页视频实测](evidence/chromium-vdh.md)
+Xfce 默认使用 Chromium 原生 X11 窗口。安装网页视频更新并启用 Weston 模式后，Chromium 156 可以调用海思 VDH 播放符合条件的 H.264。已在 HTML 视频和 Media Source Extensions 分段播放中验收，网页图形由 Mali450 加速。该版浏览器已验收 8 位、逐行、单 slice、单参考帧的 I/P 码流。网站实际下发的编码决定能否启用。旧归档中的 Debian Chromium 150 继续作为回退入口。[通过 SSH 安装或回退](board/vdh/chromium/README.md) · [网页视频实测](evidence/chromium-vdh.md)
 
 更新 6.12.114 的 VDH 驱动并安装配套 wiliwili 后，B 站 H.264 网播可以使用硬解，已在真实 720p 和 1080p 的含 B 帧、6 个短期参考帧码流上验证。原片逐帧像素验收和桌面实际丢帧分别记录。[wiliwili 安装与实测](board/vdh/wiliwili/README.md)
 
