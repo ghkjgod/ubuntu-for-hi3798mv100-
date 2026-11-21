@@ -29,7 +29,7 @@ def validate_image(image):
     require(zlib.crc32(header) == hcrc and zlib.crc32(image[64:]) == dcrc, 'uImage CRC mismatch')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('operation', choices=['audit', 'install', 'install-gpu', 'install-cpu', 'restore'])
+parser.add_argument('operation', choices=['audit', 'install', 'install-gpu', 'install-cpu', 'install-rsen', 'restore'])
 args = parser.parse_args()
 require(os.geteuid() == 0 and slot.is_block_device(), 'Expected root on the target board')
 require((sysblock/'mmcblk0/device/cid').read_text().strip() == '110100303038473330009474d3adc483', 'Unexpected eMMC identity')
@@ -84,6 +84,17 @@ if cpu_file.exists():
     require(len(cpu_image) <= len(stock), 'CPU kernel exceeds partition')
     cpu_state = cpu_image + gpu_state[len(cpu_image):]
     known.append(cpu_state)
+rsen_image = b''
+rsen_state = None
+rsen_file = recovery / 'rsen-uImage'
+if rsen_file.exists():
+    require(cpu_state is not None, 'The previous CPU kernel is required')
+    rsen_image = rsen_file.read_bytes()
+    require(sha(rsen_image) == '2cf3929fdb0d3462d1b23783a32eab1712c31d829257d18e5c9bcaffa2866707', 'HDMI receiver-detection image hash mismatch')
+    validate_image(rsen_image)
+    require(len(rsen_image) <= len(stock), 'HDMI kernel exceeds partition')
+    rsen_state = rsen_image + cpu_state[len(rsen_image):]
+    known.append(rsen_state)
 with (slot.open('rb', buffering=0) if args.operation == 'audit' else slot.open('r+b', buffering=0)) as target:
     fcntl.flock(target, fcntl.LOCK_EX)
     current = target.read()
@@ -102,14 +113,18 @@ with (slot.open('rb', buffering=0) if args.operation == 'audit' else slot.open('
     if args.operation == 'install-cpu':
         require(cpu_state is not None, 'Stage the verified cpu-uImage first')
         wanted = cpu_state
+    if args.operation == 'install-rsen':
+        require(rsen_state is not None, 'Stage the verified rsen-uImage first')
+        require(current in (cpu_state, rsen_state), 'Expected the CPU1200 kernel as the upgrade base')
+        wanted = rsen_state
     if current == wanted:
         print('Already installed')
         raise SystemExit(0)
-    if args.operation in ('install', 'install-gpu', 'install-cpu'):
+    if args.operation in ('install', 'install-gpu', 'install-cpu', 'install-rsen'):
         require(os.uname().release == '6.12.114-hi3798-mv100-exp' and Path('/sys/class/drm/card0-HDMI-A-1').exists(), 'Run the RAM trial first')
     target.seek(0)
     # Both known partition states have identical bytes after this prefix.
-    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image), len(gpu_image), len(cpu_image))
+    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image), len(gpu_image), len(cpu_image), len(rsen_image))
     written = target.write(wanted[:length])
     os.fsync(target.fileno())
     require(written == length, 'Short kernel write, keep the board running')

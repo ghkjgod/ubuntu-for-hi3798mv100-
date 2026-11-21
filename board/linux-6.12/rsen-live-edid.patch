@@ -1,0 +1,38 @@
+--- a/hi3798/display-init/build-display-init-port.py
++++ b/hi3798/display-init/build-display-init-port.py
+@@ -60,6 +60,35 @@
+ code = code.replace(b'if ((enHdFmt <= HI_UNF_ENC_FMT_720P_50) || Support4K)',
+                     b'if ((enHdFmt <= HI_UNF_ENC_FMT_720P_50) || Support4K || (enHdFmt >= HI_UNF_ENC_FMT_VESA_2048X1152_60 && enHdFmt <= HI_UNF_ENC_FMT_VESA_2560X1600_60_RB))')
+ code = code.replace(b'if(Support4K)', b'if(Support4K || (enHdFmt >= HI_UNF_ENC_FMT_VESA_2048X1152_60 && enHdFmt <= HI_UNF_ENC_FMT_VESA_2560X1600_60_RB))')
++# RSEN may stay low while the sink waits for a clock and the PHY is off.
++# Permit a trial only with a live HPD and a checked base EDID read over DDC.
++guard = b'if (!TX_RSEN_Status() || g_HDMICnt)'
++open_fn = b'HI_S32 HI_UNF_HDMI_Open(HI_UNF_HDMI_ID_E enHdmi,HI_UNF_ENC_FMT_E enFormat)'
++if code.count(guard) != 1 or code.count(open_fn) != 1:
++    raise RuntimeError('Unexpected SDK receiver-sense sequence')
++helper = b"""
++extern unsigned int mv100_sdk_hpd(void);
++extern int mv100_sdk_edid(unsigned int, unsigned char *, unsigned int);
++static int mv100_sink_responds(void)
++{
++    static const unsigned char header[] = { 0,255,255,255,255,255,255,0 };
++    unsigned char edid[128];
++    unsigned int i, sum = 0;
++    if (!mv100_sdk_hpd() || mv100_sdk_edid(0, edid, sizeof(edid)))
++        return 0;
++    for (i = 0; i < sizeof(header); i++)
++        if (edid[i] != header[i])
++            return 0;
++    for (i = 0; i < sizeof(edid); i++)
++        sum += edid[i];
++    if ((sum & 255) || !mv100_sdk_hpd())
++        return 0;
++    HDMIPrint("HDMI: valid live EDID and HPD with RSEN low; starting PHY\\n");
++    return 1;
++}
++"""
++code = code.replace(open_fn, helper + open_fn)
++code = code.replace(guard, b'if (g_HDMICnt || (!TX_RSEN_Status() && !mv100_sink_responds()))')
+ hdmi.write_bytes(code)
+ vdp = staged/'vdp_v2_0/hal/3798m/vdp_driver.c'
+ t = vdp.read_text(errors='surrogateescape')

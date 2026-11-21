@@ -157,3 +157,22 @@ done
 ```
 
 通过 SSH 恢复原来的 CPU 1.0 GHz、GPU 500 MHz 内核，执行 `python3 /var/lib/histb-kernel-recovery/display-slot-cpu.py install-gpu && sync && systemctl reboot`。也可以在当前内核临时执行 `echo 1000000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq`，立即限制加速。重建时，在上方完整内核构建命令前设置 `MV100_CPU1200=1`，然后运行 `sh board/linux-6.12/package-clock-update.sh cpu1200 BUILD/package/uImage hi3798mv100-cpu1200.tar.gz`。
+
+## H27T22S-3 Pro 直连无信号
+
+这台盒子的 CPU1200 内核在部分显示器上可读到 EDID，同时海思发射器报告 RSEN 为低。旧驱动在给 PHY 上电前就退出。修复版保留原有 RSEN 检查；在它为低时，检查热插拔引脚，通过 DDC 重新读取 EDID 基本块，校验头部、校验和以及引脚状态，再启动 PHY。试验内核的 1080p60 和 1440p59.95 均能启用扫描输出。直连 H27T22S-3 Pro 时，使用者在 RAM 试启动和 eMMC 断电重启后两次确认看到桌面。59.95 Hz 来自 Xorg 读数。[验收记录](../../evidence/hdmi-h27-rsen.md)
+
+当前这台盒子已安装。更新包适用于本项目已有 CPU1200 维护目录、匹配的 eMMC 和已知内核分区状态；安装器会核验这些条件。通过 SSH 将更新包上传至 /run，再以 root 执行以下命令。
+
+```sh
+mkdir -p /run/histb-rsen
+cd /run/histb-rsen
+tar xzf /run/hi3798mv100-hdmi-rsen.tar.gz
+sha256sum -c SHA256SUMS
+d=/var/lib/histb-kernel-recovery
+install -m644 rsen-uImage "$d/rsen-uImage"
+install -m644 display-slot.py "$d/display-slot-rsen.py"
+python3 "$d/display-slot-rsen.py" install-rsen && sync && systemctl reboot
+```
+
+SSH 回退到原 CPU1200 内核可运行 `python3 /var/lib/histb-kernel-recovery/display-slot-rsen.py install-cpu && sync && systemctl reboot`。从源码重建时同时设置 `MV100_HDMI_RSEN=1 MV100_CPU1200=1` 并按前文构建，随后运行 `sh board/linux-6.12/package-clock-update.sh hdmi-rsen BUILD/package/uImage hi3798mv100-hdmi-rsen.tar.gz`。此包只更新内核。[更新包](../../release/hi3798mv100-hdmi-rsen.tar.gz)

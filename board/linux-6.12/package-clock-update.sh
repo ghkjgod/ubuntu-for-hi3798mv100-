@@ -4,7 +4,8 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 case ${1:-} in
     gpu500) name=gpu-uImage ;;
     cpu1200) name=cpu-uImage ;;
-    *) echo 'Usage: package-clock-update.sh {gpu500|cpu1200} UIMAGE OUTPUT.tar.gz' >&2; exit 2 ;;
+    hdmi-rsen) name=rsen-uImage ;;
+    *) echo 'Usage: package-clock-update.sh {gpu500|cpu1200|hdmi-rsen} UIMAGE OUTPUT.tar.gz' >&2; exit 2 ;;
 esac
 shift
 image=$(realpath "${1:?pass the board uImage}")
