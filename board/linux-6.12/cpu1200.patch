@@ -1,0 +1,339 @@
+--- a/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima-mp2.dts
++++ b/arch/arm/boot/dts/hisilicon/hi3798mv100-codex-lima-mp2.dts
+@@ -10,6 +10,7 @@
+ 
+ / {
+ 	model = "Huawei EC6108V9C Hi3798MV100";
++    compatible = "huawei,ec6108v9c", "hisilicon,hi3798mv100";
+ 	aliases {
+ 		mmc1 = &sdcard;
+ 	};
+@@ -53,3 +54,35 @@
+ 			 <&crg HI3798MV100_USB2_2_12M_CLK>;
+ 	};
+ };
++
++&{/cpus/cpu@0} {
++    #cooling-cells = <2>;
++};
++
++/ {
++    tsensor: temperature-sensor {
++        compatible = "hisilicon,hi3798mv100-tsensor";
++        hisilicon,crg = <&crg>;
++        #thermal-sensor-cells = <0>;
++    };
++    thermal-zones {
++        ec6108-cpu {
++            polling-delay = <3000>;
++            polling-delay-passive = <1000>;
++            thermal-sensors = <&tsensor>;
++            trips {
++                cpu_warm: cpu-warm {
++                    temperature = <90000>;
++                    hysteresis = <5000>;
++                    type = "passive";
++                };
++            };
++            cooling-maps {
++                map0 {
++                    trip = <&cpu_warm>;
++                    cooling-device = <&{/cpus/cpu@0} 1 1>;
++                };
++            };
++        };
++    };
++};
+--- a/drivers/cpufreq/hi3798mv100-cpufreq.c
++++ b/drivers/cpufreq/hi3798mv100-cpufreq.c
+@@ -1,5 +1,5 @@
+ // SPDX-License-Identifier: GPL-2.0-only
+-/* MV100 selector-based DFS, using SDK register definitions. Voltage is unchanged.
++/* MV100 selector-based DFS, using SDK register definitions.
+  * Frequencies are SDK nominal values; higher selectors require explicit opt-in; APLL is unchanged.
+  */
+ #include <linux/cpufreq.h>
+@@ -13,7 +13,13 @@
+ static struct regmap *crg;
+ static unsigned int boot_max;
+ static unsigned int boot_rate;
+-static unsigned int daily_max_khz = 1000000;
++/* PERI_PMC7 and PMC9 are in the CRG syscon's second 4 KiB page. */
++#define CPU_PWM 0x101c
++#define PWM_NORMAL 0x004f00e7
++#define PWM_BOOST  0x002f00e7
++extern bool ec6108_register_thermal(void);
++static bool pwm_available;
++static unsigned int daily_max_khz;
+ module_param(daily_max_khz, uint, 0444);
+ MODULE_PARM_DESC(daily_max_khz, "Daily CPU cap: 1000000 recovery or user-requested 1200000 kHz");
+ static bool allow_overclock;
+@@ -35,28 +41,87 @@
+     if (regmap_read(crg,0x48,&val)) return 0;
+     return rates[val&7];
+ }
++static bool mv100_matches_readback(struct regmap *map, unsigned int offset,
++                                    unsigned int mask, unsigned int expected)
++{
++    unsigned int value;
++
++    return !regmap_read(map, offset, &value) && (value & mask) == expected;
++}
++
++static bool ec6108_pwm_profile(void)
++{
++    struct regmap *sys, *peri;
++    struct device_node *node;
++
++    sys = syscon_regmap_lookup_by_compatible("hisilicon,hi3798mv100-sysctrl");
++    node = of_find_node_by_path("/soc/peripheral-controller@f8a20000");
++    if (!node)
++        return false;
++    peri = syscon_node_to_regmap(node);
++    of_node_put(node);
++    if (IS_ERR(peri) || IS_ERR(sys))
++        return false;
++    return mv100_matches_readback(sys, 0xee0, ~0U, 0x37980100) &&
++           mv100_matches_readback(peri, 0x840, GENMASK(20,16), 7U << 16) &&
++           mv100_matches_readback(sys, 0xc4, ~0U, 0x02635743) &&
++           mv100_matches_readback(sys, 0xc8, ~0U, 0x00634f3b) &&
++           mv100_matches_readback(crg, 0x1024, ~0U, 0x915) &&
++           mv100_matches_readback(crg, CPU_PWM, ~0U, PWM_NORMAL);
++}
++
++static int ec6108_cpu_supply(unsigned int target)
++{
++    unsigned int current_pwm;
++    int ret = regmap_read(crg, CPU_PWM, &current_pwm);
++
++    if (ret || current_pwm == target)
++        return ret;
++    if (current_pwm != PWM_NORMAL && current_pwm != PWM_BOOST)
++        return -EIO;
++    ret = regmap_write(crg, CPU_PWM, target);
++    if (ret)
++        return ret;
++    if (!mv100_matches_readback(crg, CPU_PWM, ~0U, target))
++        return -EIO;
++    usleep_range(11000, 12500);
++    return 0;
++}
++
+ static int mv100_target(struct cpufreq_policy *policy,unsigned int index)
+ {
+     unsigned int sel=mv100_freqs[index].driver_data;
++    unsigned int status;
+     int ret;
+     if (mv100_freqs[index].frequency>boot_max) return -EINVAL;
+     /* 1500 MHz remains explicitly isolated from automatic governors. */
+     if (mv100_freqs[index].frequency > daily_max_khz &&
+         (!policy->governor || strcmp(policy->governor->name, "userspace")))
+         return -EINVAL;
++    if (pwm_available && sel == 5) {
++        ret = ec6108_cpu_supply(PWM_BOOST);
++        if (ret)
++            return ret;
++    }
+     /* SDK: select software control, deassert trigger, set mux, trigger. */
+     ret=regmap_update_bits(crg,0x48,BIT(9)|BIT(10),BIT(9));
+     if (ret) return ret;
+     ret=regmap_update_bits(crg,0x48,7,sel);
+     if (ret) return ret;
+     ret=regmap_update_bits(crg,0x48,BIT(10),BIT(10));
+-    udelay(10);
+-    return ret;
++    if (ret)
++        return ret;
++    ret = regmap_read_poll_timeout(crg, 0x154, status,
++                                   (status & 15) == (sel * 2 + 1), 2, 2000);
++    if (ret || !pwm_available || sel == 5)
++        return ret;
++    /* Only lower the rail after verifying the slower clock is active. */
++    return ec6108_cpu_supply(PWM_NORMAL);
+ }
+ static int mv100_policy_init(struct cpufreq_policy *policy)
+ {
+     cpumask_copy(policy->cpus,cpu_possible_mask);
+-    cpufreq_generic_init(policy,mv100_freqs,1000000);
++    cpufreq_generic_init(policy, mv100_freqs, pwm_available ? 15000000 : 1000000);
+     /* Start at the firmware rate; userspace selects the daily cap later. */
+     policy->max=min(boot_rate, policy->cpuinfo.max_freq);
+     return 0;
+@@ -78,11 +143,24 @@
+     if (IS_ERR(crg)) return PTR_ERR(crg);
+     boot_rate=mv100_get(0);
+     if (!boot_rate) return -ENODEV;
++    if (of_machine_is_compatible("huawei,ec6108v9c")) {
++        pwm_available = IS_ENABLED(CONFIG_CPU_FREQ_THERMAL) &&
++                        (boot_rate == 1000000) && ec6108_pwm_profile() &&
++                        ec6108_register_thermal();
++        if (pwm_available)
++            mv100_driver.flags |= CPUFREQ_IS_COOLING_DEV;
++        allow_overclock = false;
++        if (!pwm_available)
++            daily_max_khz = 1000000;
++    }
++    if (!daily_max_khz)
++        daily_max_khz = pwm_available ? 1200000 : 1000000;
+     if (daily_max_khz != 1000000 && daily_max_khz != 1200000) return -EINVAL;
+     boot_max=allow_overclock ? 1500000U : daily_max_khz;
+     for(i=0;mv100_freqs[i].frequency!=CPUFREQ_TABLE_END;i++)
+         if(mv100_freqs[i].frequency>boot_max) mv100_freqs[i].frequency=CPUFREQ_ENTRY_INVALID;
+-    pr_info("MV100 cpufreq: fixed boot voltage, nominal maximum %u kHz\n",boot_max);
++    pr_info("MV100 cpufreq: %s, nominal maximum %u kHz\n",
++            pwm_available ? "EC6108 QFP216 TT PWM" : "boot voltage", boot_max);
+     return cpufreq_register_driver(&mv100_driver);
+ }
+ device_initcall(mv100_cpufreq_init);
+--- a/drivers/cpufreq/Makefile
++++ b/drivers/cpufreq/Makefile
+@@ -108,4 +108,4 @@
+ obj-$(CONFIG_SPARC_US2E_CPUFREQ)	+= sparc-us2e-cpufreq.o
+ obj-$(CONFIG_SPARC_US3_CPUFREQ)		+= sparc-us3-cpufreq.o
+ 
+-obj-$(CONFIG_ARM_HI3798MV100_CPUFREQ) += hi3798mv100-cpufreq.o
++obj-$(CONFIG_ARM_HI3798MV100_CPUFREQ) += hi3798mv100-cpufreq.o hi3798mv100-tsensor.o
+--- /dev/null
++++ b/drivers/cpufreq/hi3798mv100-tsensor.c
+@@ -0,0 +1,141 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Hi3798MV100 PMC temperature sensor. Includes the per-chip temperature trim used by the vendor 4.4 driver. */
++#include <linux/delay.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/io.h>
++#include <linux/iopoll.h>
++#include <linux/ioport.h>
++#include <linux/slab.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/thermal.h>
++
++#define TSENSOR_CTRL 0x1028
++#define TSENSOR_DATA 0x1030
++
++struct mv100_sensor {
++    struct regmap *crg;
++    int trim;
++};
++
++/* The read address and word strobe use different registers from OTP programming.
++ * Limit access to the factory temperature field. Only store its signed offset.
++ */
++static int mv100_read_temp_trim(int *trim)
++{
++    const resource_size_t base = 0xf8ab0000;
++    const size_t size = 0x24;
++    void __iomem *otp;
++    u32 status, first, second, mode;
++    int ret;
++
++    if (!request_mem_region(base, size, "mv100-temperature-trim"))
++        return -EBUSY;
++    otp = ioremap(base, size);
++    if (!otp) {
++        ret = -ENOMEM;
++        goto release;
++    }
++    ret = readl_poll_timeout(otp + 0x0c, status, status != ~0U && (status & 1), 10, 20000);
++    if (ret || (status & 2)) {
++        ret = ret ?: -EIO;
++        goto unmap;
++    }
++    writel((readl(otp) & ~3U) | 2, otp);
++    /* READ, word size, write select and write enable both clear. */
++    writel((readl(otp + 4) & ~0x37U) | 0x22, otp + 4);
++    mode = readl(otp + 0x20);
++    writel(mode | 0x34f, otp + 0x20);
++    writel(0x258, otp + 0x18);
++    ret = readl_poll_timeout(otp + 0x0c, status, status != ~0U && (status & 1), 10, 20000);
++    if (ret || (status & 2)) {
++        ret = ret ?: -EIO;
++        goto unmap;
++    }
++    first = readl(otp + 0x10);
++    writel(0x258, otp + 0x18);
++    ret = readl_poll_timeout(otp + 0x0c, status, status != ~0U && (status & 1), 10, 20000);
++    if (ret || (status & 2)) {
++        ret = ret ?: -EIO;
++        goto unmap;
++    }
++    second = readl(otp + 0x10);
++    if (first != second || first == ~0U) {
++        ret = -EIO;
++        goto unmap;
++    }
++    *trim = ((first >> 18) & 15) * ((first & BIT(22)) ? -1 : 1);
++unmap:
++    iounmap(otp);
++release:
++    release_mem_region(base, size);
++    return ret;
++}
++
++static int mv100_get_temp(struct thermal_zone_device *tz, int *temp)
++{
++    struct mv100_sensor *sensor = thermal_zone_device_priv(tz);
++    unsigned int word, sum = 0;
++    int i, j, ret;
++
++    for (i = 0; i < 2; i++) {
++        ret = regmap_read(sensor->crg, TSENSOR_DATA + i * sizeof(word), &word);
++        if (ret)
++            return ret;
++        for (j = 0; j < 4; j++)
++            sum += (word >> (8 * j)) & 0xff;
++    }
++    if (!sum || sum == 8 * 255)
++        return -ENODATA;
++    *temp = ((int)((sum / 8) * 180 / 255) - 40 + sensor->trim) * 1000;
++    return 0;
++}
++
++static const struct thermal_zone_device_ops mv100_tz_ops = {
++    .get_temp = mv100_get_temp,
++};
++
++static int mv100_thermal_probe(struct platform_device *pdev)
++{
++    struct thermal_zone_device *tz;
++    struct mv100_sensor *sensor;
++    int ret;
++
++    sensor = devm_kzalloc(&pdev->dev, sizeof(*sensor), GFP_KERNEL);
++    if (!sensor)
++        return -ENOMEM;
++    ret = mv100_read_temp_trim(&sensor->trim);
++    if (ret)
++        return ret;
++    sensor->crg = syscon_regmap_lookup_by_phandle(pdev->dev.of_node, "hisilicon,crg");
++    if (IS_ERR(sensor->crg))
++        return PTR_ERR(sensor->crg);
++    ret = regmap_write(sensor->crg, TSENSOR_CTRL, 0x07200000);
++    if (ret)
++        return ret;
++    msleep(40);
++    tz = devm_thermal_of_zone_register(&pdev->dev, 0, sensor, &mv100_tz_ops);
++    return PTR_ERR_OR_ZERO(tz);
++}
++
++static const struct of_device_id mv100_thermal_match[] = {
++    { .compatible = "hisilicon,hi3798mv100-tsensor" },
++    {}
++};
++
++static struct platform_driver mv100_thermal_driver = {
++
++    .driver = {
++        .name = "hi3798mv100-tsensor",
++        .of_match_table = mv100_thermal_match,
++        .suppress_bind_attrs = true,
++    },
++};
++/* Called only once, after matching the EC6108 package and the PWM preset. */
++bool __init ec6108_register_thermal(void);
++bool __init ec6108_register_thermal(void)
++{
++    return !platform_driver_probe(&mv100_thermal_driver, mv100_thermal_probe);
++}
++MODULE_LICENSE("GPL");

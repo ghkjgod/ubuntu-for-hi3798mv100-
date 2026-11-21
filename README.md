@@ -14,7 +14,9 @@ LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构�
 
 ## 性能模式
 
-默认 `balanced` 让 CPU 空闲时降至 400 MHz，重负载时允许四核各自达到 1 GHz，GPU 在驱动支持的 200–400 MHz 间调节。要在交互或渲染前直接使用最高频率，运行 `histb-performance full`。用 `histb-performance balanced` 切回，`histb-performance status` 查看当前策略。选择会在重启后保留。两种模式都允许 GPU 空闲挂起。压缩交换空间按内存的四分之一设置，按写入量占用物理 RAM。[负载、响应时间和硬件限制](HARDWARE.md)
+本机装入四核 1.2 GHz 更新后，默认 `balanced` 让 CPU 空闲时可降到 400 MHz，负载升高时四核共用时钟可升到 1.2 GHz。芯片达到 90°C 时停用加速，低于 85°C 后恢复。Mali450 在 432–500 MHz 间自动调节。基础 6.12 内核的上限为 CPU 1 GHz、GPU 400 MHz。[更新与 SSH 回退](board/linux-6.12/README.md) · [真机时钟与温控测量](evidence/cpu-gpu-clocks-20261121.md)
+
+要在交互或渲染前直接使用最高频率，运行 `histb-performance full`。用 `histb-performance balanced` 切回，`histb-performance status` 查看当前策略。选择会在重启后保留。两种模式都允许 GPU 空闲挂起。压缩交换空间按内存的四分之一设置，按写入量占用物理 RAM。[负载、响应时间和硬件限制](HARDWARE.md)
 
 ## 无屏 SSH 登录
 

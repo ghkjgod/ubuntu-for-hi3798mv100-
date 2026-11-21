@@ -117,3 +117,43 @@ systemctl reboot
 重连 SSH 后用 `histb-performance status` 查看实际策略。回到先前的 400 MHz HDMI 内核，在同一台盒子上执行 `python3 /var/lib/histb-kernel-recovery/display-slot-gpu.py install`，然后 `systemctl reboot`。恢复后相同的性能脚本会使用旧内核公布的频率范围。
 
 按上方的完整构建步骤加入环境变量 `MV100_GPU500=1`，再用 `sh board/linux-6.12/package-gpu.sh BUILD/package/uImage hi3798mv100-gpu500.tar.gz` 重建本次增量包。
+
+## 四核 1.2 GHz 自动加速和 90°C 温控
+
+此更新叠加在本机已验收的 GPU 500 MHz 内核上。日用策略为 `schedutil`，四核共用一个时钟域。CPU 允许 400–1200 MHz，Lima 在 432–500 MHz 间调节。CPU 温度达到 90°C 时，内核把 CPU 上限降至标称 1000 MHz，回到原机 PWM 设置。温度低于 85°C 后，内核重新允许 1200 MHz。温度取自芯片内部传感器，使用原机 OTP 温度修调。桌面、网络和 SSH 的启停独立于温控。
+
+已有本项目 GPU 更新和恢复文件的这台盒子可通过 SSH 安装。先把仓库 `release/hi3798mv100-cpu1200.tar.gz` 拷到盒子的 `/run/`。以下命令校验归档和内核分区身份，只写入 p6 的内核前缀。
+
+```sh
+set -eu
+cd /run
+echo 'd15c0579f69999e9f0e05f037ed8934dd28a354b04845187bff1594bf329b813  hi3798mv100-cpu1200.tar.gz' | sha256sum -c -
+mkdir -p histb-cpu
+tar -xzf hi3798mv100-cpu1200.tar.gz -C histb-cpu
+cd histb-cpu
+sha256sum -c SHA256SUMS
+rec=/var/lib/histb-kernel-recovery
+test -s "$rec/gpu-uImage"
+install -m644 cpu-uImage "$rec/cpu-uImage.new"
+mv "$rec/cpu-uImage.new" "$rec/cpu-uImage"
+python3 display-slot.py audit
+install -m644 display-slot.py "$rec/display-slot-cpu.py.new"
+mv "$rec/display-slot-cpu.py.new" "$rec/display-slot-cpu.py"
+python3 "$rec/display-slot-cpu.py" install-cpu
+histb-performance balanced
+sync
+systemctl reboot
+```
+
+重连后检查性能模式和温控实际设置。
+
+```sh
+histb-performance status
+for z in /sys/class/thermal/thermal_zone*; do
+    [ "$(cat "$z/type")" = ec6108-cpu ] || continue
+    cat "$z/temp" "$z/trip_point_0_temp" "$z/trip_point_0_hyst" "$z/policy"
+    cat "$z/cdev0/cur_state"
+done
+```
+
+通过 SSH 恢复原来的 CPU 1.0 GHz、GPU 500 MHz 内核，执行 `python3 /var/lib/histb-kernel-recovery/display-slot-cpu.py install-gpu && sync && systemctl reboot`。也可以在当前内核临时执行 `echo 1000000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq`，立即限制加速。重建时，在上方完整内核构建命令前设置 `MV100_CPU1200=1`，然后运行 `sh board/linux-6.12/package-clock-update.sh cpu1200 BUILD/package/uImage hi3798mv100-cpu1200.tar.gz`。

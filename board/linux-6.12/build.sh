@@ -23,8 +23,11 @@ patch -s -d source -p1 <"$here/board.patch"
 patch -s -d source -p1 <"$here/display-modes.patch"
 patch -s -d source -p1 <"$here/irq-timing.patch"
 patch -s -d source -p1 <"$here/pcm-drain.patch"
-if [[ ${MV100_GPU500:-0} == 1 ]]; then
+if [[ ${MV100_GPU500:-0} == 1 || ${MV100_CPU1200:-0} == 1 ]]; then
     patch -s -d source -p1 <"$here/gpu500.patch"
+fi
+if [[ ${MV100_CPU1200:-0} == 1 ]]; then
+    patch -s -d source -p1 <"$here/cpu1200.patch"
 fi
 if test -f "${INPUT_CACHE:-/nonexistent}/upstream-v6.12.114-crg.c"; then
     cp "$INPUT_CACHE/upstream-v6.12.114-crg.c" .
@@ -37,6 +40,9 @@ export ARCH=arm CROSS_COMPILE=${CROSS_COMPILE:-arm-linux-gnueabihf-} OUT_DIR="$w
 # the two userspace tools. Otherwise installing libc changes embedded IKCONFIG.
 export USERCFLAGS=-nostdinc
 cp "$here/ec6108.config" out/.config
+if [[ ${MV100_CPU1200:-0} == 1 ]]; then
+    source/scripts/config --file out/.config --enable CPU_FREQ_THERMAL --enable THERMAL_GOV_BANG_BANG --disable THERMAL_DEFAULT_GOV_STEP_WISE --enable THERMAL_DEFAULT_GOV_BANG_BANG
+fi
 make -s -C source O="$OUT_DIR" olddefconfig
 bash source/hi3798/build-mv100.sh build
 cp out/uImage-mv100-codex-lima-mp2 package/uImage

@@ -29,7 +29,7 @@ def validate_image(image):
     require(zlib.crc32(header) == hcrc and zlib.crc32(image[64:]) == dcrc, 'uImage CRC mismatch')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('operation', choices=['audit', 'install', 'install-gpu', 'restore'])
+parser.add_argument('operation', choices=['audit', 'install', 'install-gpu', 'install-cpu', 'restore'])
 args = parser.parse_args()
 require(os.geteuid() == 0 and slot.is_block_device(), 'Expected root on the target board')
 require((sysblock/'mmcblk0/device/cid').read_text().strip() == '110100303038473330009474d3adc483', 'Unexpected eMMC identity')
@@ -64,13 +64,26 @@ replacement = candidate + previous[len(candidate):]
 known = [previous, prior, last, audio, replacement]
 gpu_file = recovery / 'gpu-uImage'
 gpu_image = b''
+gpu_state = None
 if gpu_file.exists():
     gpu_image = gpu_file.read_bytes()
     require(sha(gpu_image) == '83183897bd65da844ad0eb7433b4a55b785de174fda4a240156689344d7b05ce',
             'GPU kernel hash mismatch')
     validate_image(gpu_image)
     require(len(gpu_image) <= len(stock), 'GPU kernel exceeds partition')
-    known.append(gpu_image + replacement[len(gpu_image):])
+    gpu_state = gpu_image + replacement[len(gpu_image):]
+    known.append(gpu_state)
+cpu_file = recovery / 'cpu-uImage'
+cpu_image = b''
+cpu_state = None
+if cpu_file.exists():
+    require(gpu_state is not None, 'The GPU rollback image is required')
+    cpu_image = cpu_file.read_bytes()
+    require(sha(cpu_image) == 'f4e4051a7788b11bad15701fe19d29df0c58d7f5e62bc18b034c31e1515c7939', 'CPU kernel hash mismatch')
+    validate_image(cpu_image)
+    require(len(cpu_image) <= len(stock), 'CPU kernel exceeds partition')
+    cpu_state = cpu_image + gpu_state[len(cpu_image):]
+    known.append(cpu_state)
 with (slot.open('rb', buffering=0) if args.operation == 'audit' else slot.open('r+b', buffering=0)) as target:
     fcntl.flock(target, fcntl.LOCK_EX)
     current = target.read()
@@ -78,20 +91,25 @@ with (slot.open('rb', buffering=0) if args.operation == 'audit' else slot.open('
     print('geometry', geometry, 'current', sha(current), 'display-image', candidate_hash, flush=True)
     if gpu_image:
         print('gpu-image', sha(gpu_image), flush=True)
+    if cpu_image:
+        print('cpu-image', sha(cpu_image), flush=True)
     if args.operation == 'audit':
         raise SystemExit(0)
     wanted = replacement if args.operation == 'install' else previous
     if args.operation == 'install-gpu':
         require(bool(gpu_image), 'Stage the verified gpu-uImage first')
-        wanted = known[-1]
+        wanted = gpu_state
+    if args.operation == 'install-cpu':
+        require(cpu_state is not None, 'Stage the verified cpu-uImage first')
+        wanted = cpu_state
     if current == wanted:
         print('Already installed')
         raise SystemExit(0)
-    if args.operation in ('install', 'install-gpu'):
+    if args.operation in ('install', 'install-gpu', 'install-cpu'):
         require(os.uname().release == '6.12.114-hi3798-mv100-exp' and Path('/sys/class/drm/card0-HDMI-A-1').exists(), 'Run the RAM trial first')
     target.seek(0)
     # Both known partition states have identical bytes after this prefix.
-    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image), len(gpu_image))
+    length = max(len(candidate), len(previous_image), len(prior_image), len(before_audio), len(audio_image), len(gpu_image), len(cpu_image))
     written = target.write(wanted[:length])
     os.fsync(target.fileno())
     require(written == length, 'Short kernel write, keep the board running')
