@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Play a local video through VDH when supported, with FFplay as fallback."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+STATS = Path("/sys/devices/platform/mv100-vdh")
+
+
+def software(path, reason):
+    print(f"histb-play: FFmpeg software decode ({reason})", file=sys.stderr, flush=True)
+    os.execvp("ffplay", ["ffplay", "-hide_banner", "-loglevel", "warning",
+                         "-autoexit", "-i", str(path)])
+
+
+def read_counter(name):
+    return int((STATS / name).read_text())
+
+
+def play(path):
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=codec_name,width,height,pix_fmt,has_b_frames,refs",
+                            "-of", "json", "-i", str(path)], capture_output=True, text=True)
+    if probe.returncode:
+        software(path, "ffprobe could not identify the video")
+    streams = json.loads(probe.stdout).get("streams", [])
+    stream = streams[0] if streams else {}
+    codec = stream.get("codec_name", "unknown")
+    if codec not in ("h264", "hevc"):
+        software(path, codec)
+    if (stream.get("pix_fmt") not in ("yuv420p", "yuvj420p") or
+            stream.get("width", 0) > 1920 or stream.get("height", 0) > 1088 or
+            stream.get("has_b_frames", 0) or stream.get("refs", 1) > 1):
+        software(path, "outside the tested 8-bit single-reference I/P formats")
+    if not STATS.exists() or not shutil.which("gst-play-1.0"):
+        software(path, "VDH player unavailable")
+    decoder = "v4l2slh264dec" if codec == "h264" else "v4l2slh265dec"
+    if subprocess.run(["gst-inspect-1.0", "--exists", decoder]).returncode:
+        software(path, f"{decoder} unavailable")
+
+    env = os.environ.copy()
+    rank = env.get("GST_PLUGIN_FEATURE_RANK", "")
+    env["GST_PLUGIN_FEATURE_RANK"] = (rank + "," if rank else "") + decoder + ":512"
+    before = read_counter("decoded_frames")
+    errors = read_counter("rejected_frames")
+    print(f"histb-play: trying {decoder}", file=sys.stderr, flush=True)
+    player = subprocess.Popen(["gst-play-1.0", "--no-position", str(path)], env=env)
+    try:
+        while player.poll() is None:
+            if read_counter("rejected_frames") != errors:
+                player.terminate()
+                try:
+                    player.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    player.kill()
+                    player.wait()
+                software(path, "VDH rejected a picture; restarting playback")
+            time.sleep(0.15)
+    except KeyboardInterrupt:
+        if player.poll() is None:
+            player.terminate()
+        player.wait()
+        return 130
+    if player.returncode in (-2, -15, 130, 143):
+        return 0
+    if player.returncode or read_counter("rejected_frames") != errors or read_counter("decoded_frames") == before:
+        software(path, "hardware playback did not complete")
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2 or not Path(sys.argv[1]).is_file():
+        sys.exit("Usage: histb-play VIDEO_FILE")
+    sys.exit(play(Path(sys.argv[1]).resolve()))

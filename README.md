@@ -10,6 +10,8 @@ LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构�
 
 6.12.114 的桌面浏览器默认使用 Mali450 加速网页合成、栅格化、Canvas 和 WebGL 1。在地址栏打开 `chrome://gpu` 可以查看实际渲染器。H.264 播放仍使用 CPU 解码。已经安装上一版 6.12.114 的盒子可直接更新用户态，步骤见板级说明。[真机验收](HARDWARE.md) · [已有 6.12 系统的浏览器更新](board/linux-6.12/README.md#更新已有-612-桌面的浏览器)
 
+本地视频可使用 VDH 硬解 H.264 和 H.265 Main 的单参考帧 I/P 码流，已在 1920×1080 逐帧核对画面。打开视频文件或运行 `histb-play 文件名` 即可自动选择解码方式，其他格式由 FFmpeg 接手。已有系统可通过 SSH 安装独立更新。[安装、支持范围与回退](board/vdh/README.md) · [解码验收](evidence/vdh-6.12.114.md)
+
 ## 性能模式
 
 默认 `balanced` 让 CPU 空闲时降至 400 MHz，重负载时允许四核各自达到 1 GHz，GPU 在驱动支持的 200–400 MHz 间调节。要在交互或渲染前直接使用最高频率，运行 `histb-performance full`。用 `histb-performance balanced` 切回，`histb-performance status` 查看当前策略。选择会在重启后保留。两种模式都允许 GPU 空闲挂起。压缩交换空间按内存的四分之一设置，按写入量占用物理 RAM。[负载、响应时间和硬件限制](HARDWARE.md)

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hi3798 Video Player
+Name[zh_CN]=Hi3798 视频播放器
+Exec=histb-play %f
+Icon=multimedia-video-player
+Terminal=false
+NoDisplay=true
+Categories=AudioVideo;Player;
+MimeType=video/mp4;video/x-matroska;video/webm;video/mpeg;video/mp2t;video/vnd.avi;video/quicktime;video/x-ms-wmv;video/x-flv;video/ogg;video/3gpp;video/3gpp2;

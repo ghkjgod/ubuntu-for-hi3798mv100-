@@ -1,0 +1,3 @@
+obj-m += mv100-vdh.o
+mv100-vdh-y := vdh-video.o vdh-hw.o
+ccflags-y += -fmacro-prefix-map=$(src)/=

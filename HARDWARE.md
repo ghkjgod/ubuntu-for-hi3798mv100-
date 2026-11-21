@@ -22,7 +22,7 @@ EC6108V9C 从 eMMC 启动 Linux 6.12.114，Ubuntu 桌面的默认浏览器为 De
 | 1280×720，30 fps | 8 s | 8.49 s | 137 / 240 |
 | 1920×1080，30 fps | 8 s | 14.17 s | 150 / 240 |
 
-本机的解码单元为 **VDH V300R001**，码流检测单元为 **SCD V200**。6.12 内核已启用 media 和 V4L2 核心，但本台没有注册解码节点，`/dev/video*`、`/dev/media*` 和 `/dev/hi_vdec*` 均为空。原厂 SDK 使用 VFMW 私有接口。现有另一套海思 6.12 解码驱动支持 CV200 的 V4R3 和 MV310 的 V5R6，MV100 需要适配自己的 VDH 后端，并将解码帧通过 Chromium 可使用的接口交付。[MV100 原厂 VFMW 配置](https://github.com/glinuz/hi3798mv100/blob/master/HiSTBLinuxV100R005C00SPC041B020/source/msp/drv/vfmw/vfmw_v4.0/firmware/product/Hi3798MV100/HD_FULL/vfmw_config.cfg) · [海思 6.12 解码驱动支持表](https://github.com/HiSilicon-Development/HiVXE-2.0)
+上述浏览器基线测试时，VDH 尚未注册。随后安装的 MV100 V300R001 模块已注册 V4L2 Request 节点，GStreamer 经该节点解码 H.264 和 HEVC；同一盒子的 Chromium 实测仍选用 FFmpeg。[VDH 安装及复测](board/vdh/README.md) · [硬件与软件解码结果](evidence/vdh-6.12.114.md)
 
 ## 2026-11-20 · Linux 6.12 多分辨率 HDMI 与 Mali450
 
