@@ -20,6 +20,38 @@ LightDM 免密码进入本地 root 桌面，Xfce 关闭合成。本机和新构�
 
 公开镜像由安装者在电脑端配置自己的登录公钥。下面的 eMMC 安装示例在首次重启前写入公钥并输出盒子主机指纹。自行构建专用镜像时，也可以把 `HISTB_SSH_PUBKEY=/绝对路径/id_ed25519.pub` 作为环境变量传给构建脚本。用对应私钥执行 `ssh root@盒子的地址`，首次连接时核对指纹。
 
+### 脱离台架后的维护
+
+接路由器后，在 DHCP 租约中查看 `hi3798-desktop` 的有线地址。用已登记的公钥登录。更换 IP 时，OpenSSH 的 `HostKeyAlias` 可以让新地址继续按原先核实的主机公钥验证。例如已在本机 known_hosts 中将该盒子登记为 `hi3798-owner` 时，可用以下命令。台架专网的地址仅在相应专网有效。
+
+```sh
+ssh -o HostKeyAlias=hi3798-owner -o StrictHostKeyChecking=yes root@盒子的局域网IP
+hostname
+uname -r
+systemctl is-enabled ssh
+systemctl is-active ssh NetworkManager
+nmcli -g IP4.ADDRESS device show eth0
+```
+
+浏览器升级在 Debian 运行环境 `/opt/histb-chromium` 内进行。更新板级浏览器组件时，可用 SCP 上传已校验的升级包，再从 SSH 执行板级说明中的用户态安装命令。两个操作都可以保留 Ubuntu 的 sshd、网络、登录公钥和现有内核。SSH 的远程恢复能力以盒子能启动到 Linux 并建立网络为前提。涉及启动内核、网卡驱动或根文件系统的更新，需要先验证独立的启动回退路径。[浏览器用户态安装](board/linux-6.12/README.md#更新已有-612-桌面的浏览器)
+
+升级前关闭浏览器，将 `/opt/histb-chromium` 和本次将替换的启动器、私有驱动备份到有空间的 ext4 数据卷或管理电脑。需要保留浏览器个人资料时，一并备份 `/home/desktop/.config/chromium`。版本回退时退出浏览器，将已校验的备份恢复到空目录，再换回原路径，以免混入新版库文件。仅需临时切换软件渲染时，也可以直接在 SSH 中执行下方命令。它通过原有 Xorg 会话打开浏览器，退出后仍可从原桌面入口恢复硬件加速。
+
+```sh
+systemd-run --collect --setenv=DISPLAY=:0 --setenv=XAUTHORITY=/root/.Xauthority \
+    --setenv=HISTB_CHROMIUM_SOFTWARE=1 /usr/local/bin/histb-chromium
+```
+
+远程复验 GPU 时，可从 SSH 在同一桌面启动一个独立的临时配置。调试端口只绑定盒子本机，经 SSH 隧道访问。以下第一条在盒子 SSH 会话执行，第二条在管理电脑的另一个终端执行。电脑访问 `http://127.0.0.1:19224/json/version` 可核对浏览器版本，浏览器级 DevTools 协议的 `SystemInfo.getInfo` 可核对 Mali450、合成状态及沙箱。完成后在盒子执行 `systemctl stop histb-browser-check`。
+
+```sh
+systemd-run --collect --unit=histb-browser-check -p RuntimeMaxSec=300 \
+    --setenv=DISPLAY=:0 --setenv=XAUTHORITY=/root/.Xauthority \
+    /usr/local/bin/histb-chromium --user-data-dir=/run/browser/ssh-check \
+    --remote-debugging-address=127.0.0.1 --remote-debugging-port=19223 about:blank
+ssh -N -L 127.0.0.1:19224:127.0.0.1:19223 局域网SSH别名
+```
+
 ## 取得安装文件
 
 ```bash
