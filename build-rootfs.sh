@@ -44,10 +44,14 @@ printf '#!/bin/sh\nexit 101\n' >"$root/usr/sbin/policy-rc.d"
 chmod 755 "$root/usr/sbin/policy-rc.d"
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C
 test "$(chroot "$root" dpkg --print-architecture)" = armhf
+# Ubuntu Base excludes message catalogs. Retain the desktop language before unpacking Xfce.
+printf '%s\n' 'path-include=/usr/share/locale/zh_CN/LC_MESSAGES/*.mo' >"$root/etc/dpkg/dpkg.cfg.d/zz-histb-zh-cn"
 chroot "$root" apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=3 update
 mapfile -t packages < "$src/packages.txt"
 chroot "$root" apt-get -o Acquire::Retries=3 install -y --no-install-recommends "${packages[@]}"
 bash "$src/install-overlay.sh" "$root"
+chroot "$root" locale-gen zh_CN.UTF-8
+chroot "$root" update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
 bash "$src/configure-image-ssh.sh" "$root" "${HISTB_SSH_PUBKEY:-}"
 bash "$src/board/build.sh" "$HISTB_SDK" "$out"
 install -Dm755 "$out/hifb-plane" "$root/usr/local/sbin/hifb-plane"

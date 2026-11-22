@@ -32,6 +32,9 @@ thunar
 adwaita-icon-theme
 fonts-dejavu-core
 fonts-wqy-microhei
+locales
+language-pack-zh-hans
+language-pack-gnome-zh-hans
 fcitx-bin
 fcitx-module-dbus
 fcitx-module-x11
